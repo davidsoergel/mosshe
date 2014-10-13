@@ -26,7 +26,7 @@
 #############################################################################
 
 
-MOSSHEVERSION="14.9.19"
+MOSSHEVERSION="14.9.24-DS"
 
 #---------------------------------------------------------
 # init library and files
@@ -41,6 +41,7 @@ HTMLOK="#55ff55"
 DATUM=`date +%Y-%m-%d`
 ZEIT=`date +%H:%M:%S`
 DATIM="${DATUM};${ZEIT}"
+TIMESTAMP=`date`
 
 MOSSHELOG=`date +"${TEMPDIR}/mosshelog_%Y-%m-%d_%Hh%M"`
 
@@ -79,7 +80,8 @@ function MossheSelfCheck () {
     fi
 
     if [ -f $TEMPDIR/mosshe_lock.5 ]; then
-    	date | mail -s "$MYGROUP: $MYNAME - MoSShE in deadlock" $1
+    	#date | mail -s "$MYGROUP: $MYNAME - MoSShE in deadlock" $1
+        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$MYGROUP: $MYNAME" -event="MoSShE in deadlock" -notification="`date`" -priority=1 -url="http://www.lorax.org/mosshe"
 	rm -f $TEMPDIR/mosshe_lock.*
 	killall mosshe
     fi
@@ -133,7 +135,7 @@ function FinalizeLog () {
     fi
     
     cat $DATADIR/template_head.html \
-    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	| sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	| tee $TEMPDIR/mosshe_collected.html \
 	> $TEMPDIR/mosshe_nonokcollected.html
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
@@ -198,7 +200,7 @@ function FinalizeLog () {
 	>> $TEMPDIR/mosshe_nonokcollected.html
     
     cat $DATADIR/template_foot.html \
-    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	| sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	| sed -e "s/OKCOUNT/$OKCOUNT/g" \
 	| sed -e "s/FAILCOUNT/$FAILCOUNT/g" \
 	| tee -a $TEMPDIR/mosshe_collected.html \
@@ -222,6 +224,41 @@ function FinalizeLog () {
 	mv "$F" "$OLDF"
     done
     
+
+    # rotate notok history
+    for i in 12 11 10 9 8 7 6 5 4 3 2 1
+    do
+        p=`expr $i - 1`
+        mv -f $TEMPDIR/notok.$p $TEMPDIR/notok.$i
+    done
+    
+    fgrep -v " - OK - " $TEMPDIR/mosshe_collected.newstatus >> $TEMPDIR/notok.0
+    
+    # backup notok history for diff
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11 12
+    do
+        cp $TEMPDIR/notok.persistent.$i $TEMPDIR/notok.persistent.$i.old
+    done
+    
+    # filter notok history
+    # find lines in common among the last NUMCHECKS of $TEMPDIR/notok.$p
+
+    cp $TEMPDIR/notok.0 $TEMPDIR/notok.persistent.0
+    
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12
+    do
+        p=`expr $i - 1`
+        grep -f $TEMPDIR/notok.persistent.$p $TEMPDIR/notok.$i > $TEMPDIR/notok.persistent.$i
+    done
+    
+    # make notok diffs
+    for i in 0 1 2 3 4 5 6 7 8 9 10 11 12
+    do
+        diff $TEMPDIR/notok.persistent.$i.old $TEMPDIR/notok.persistent.$i > $TEMPDIR/notok.persistent.$i.diff
+    done
+
+    rm -f $TEMPDIR/mosshe_lock.*
+
     export OKCOUNT FAILCOUNT
 }
 
@@ -231,13 +268,13 @@ function FinalizeLog () {
 function SortGroups () {
     MossheLog "SortGroups $1"
     cat $DATADIR/template_head.html \
-    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	| sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	> $TEMPDIR/groupcollected.html
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
 	>> $TEMPDIR/groupcollected.html
 	
     cat $DATADIR/template_head.html \
-    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	    | sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	    > $TEMPDIR/mosshe.$$.grouphead.tmp
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
 	>> $TEMPDIR/mosshe.$$.grouphead.tmp
@@ -301,13 +338,13 @@ function SortGroups () {
     # SortGroupsExpanded - create per-server pages
     #---------------------------------------------------------
     cat $DATADIR/template_head.html \
-    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	| sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	> $TEMPDIR/servercollected.html
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
 	>> $TEMPDIR/servercollected.html
 	
     cat $DATADIR/template_head.html \
-    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	    | sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	    > $TEMPDIR/mosshe.$$.serverhead.tmp
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
 	>> $TEMPDIR/mosshe.$$.serverhead.tmp
@@ -374,13 +411,13 @@ function SortGroups () {
 function SortServers () {
     MossheLog "SortServers $1"
     cat $DATADIR/template_head.html \
-    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	| sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	> $TEMPDIR/servercollected.html
     echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
 	>> $TEMPDIR/servercollected.html
 	
     cat $DATADIR/template_head.html \
-    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+    	    | sed -e "s/TIMESTAMP/$TIMESTAMP/g" \
 	    > $TEMPDIR/mosshe.$$.serverhead.tmp
     echo '<tr bgcolor="#dddddd"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
 	>> $TEMPDIR/mosshe.$$.serverhead.tmp
@@ -559,6 +596,77 @@ function ReapPassiveChecks () {
 #############################################################################
 ### 	Alerting
 #############################################################################
+
+function AlertMailOnPersistentNotok () {
+MossheLog "AlertMailOnPersistentNotok $1 $2"
+MAILTO=$1;
+NUMCHECKS=$2;
+
+if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff ]; then
+    cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff > $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    cat $TEMPDIR/MAIL.$$ | mail -s "MoSShE $MYGROUP: $MYNAME : Persistent failure" $MAILTO
+    rm $TEMPDIR/MAIL.$$
+fi
+}
+
+function AlertProwlOnPersistentNotok () {
+MossheLog "AlertProwlOnPersistentNotok $1"
+NUMCHECKS=$1;
+
+if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff ]; then
+    grep '>' $TEMPDIR/notok.persistent.$NUMCHECKS.diff > $TEMPDIR/notok.persistent.$NUMCHECKS.diff.down
+    grep 'WARN' $TEMPDIR/notok.persistent.$NUMCHECKS.diff.down > $TEMPDIR/notok.persistent.$NUMCHECKS.diff.warn
+    grep 'ALERT' $TEMPDIR/notok.persistent.$NUMCHECKS.diff.down > $TEMPDIR/notok.persistent.$NUMCHECKS.diff.alert
+    grep '<' $TEMPDIR/notok.persistent.$NUMCHECKS.diff > $TEMPDIR/notok.persistent.$NUMCHECKS.diff.ok
+    
+    application="MoSSHe on `hostname`"
+    
+    if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff.alert ]; then
+        priority=2
+        count=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.alert | wc -l`
+        message=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.alert`
+        if [ $count -eq "1" ] ; then
+            event="ALERT: $message"
+            notification=$message
+        else
+            event="Multiple Alerts!"
+            notification=$message
+        fi
+        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+    fi
+    
+    if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff.warn ]; then
+        priority=1
+        count=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.warn | wc -l`
+        message=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.warn`
+        if [ $count -eq "1" ] ; then
+            event="WARN: $message"
+            notification=$message
+        else
+            event="Multiple Warnings!"
+            notification=$message
+        fi
+        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+    fi
+    
+    if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff.ok ]; then
+        priority=-2
+        count=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.ok | wc -l`
+        message=`cat $TEMPDIR/notok.persistent.$NUMCHECKS.diff.ok`
+        if [ $count -eq "1" ] ; then
+            event="OK: $message"
+            notification=$message
+        else
+            event="Multiple OK!"
+            notification=$message
+        fi
+        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+    fi
+fi
+}
 
 
 #---------------------------------------------------------
