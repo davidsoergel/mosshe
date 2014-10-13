@@ -273,7 +273,9 @@ function TCPing () {
     if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;TCPing;UNDEF;-1;NC not installed - cannot perform network check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	echo " " | nc -w $NETWAIT -q 1 -i 1 $SRV $PORT
+	#echo " " | 
+	nc -w $NETWAIT $SRV $PORT
+	# -q 1 
 	if [ $? -gt 0 ]; then 
 	    STATUS="ALERT";
 	    RTN="Service tcp/$PORT unreachable"
@@ -369,6 +371,7 @@ function HTTPheader () {
 	RTNCODE=`echo $RTN | cut -d " " -f 2`
 
 	if [ -z "$RTN" ]; then STATUS="ALERT"; RTN="Service unreachable"; RTNCODE=666
+	elif [ "$RTNCODE" -ge 500 ]; then STATUS="ALERT"
 	elif [ "$RTNCODE" -ge 300 ]; then STATUS="WARN"
 	elif [ "$RTNCODE" -ge 200 ]; then STATUS="OK"
 	else STATUS="UNDEF"
@@ -411,30 +414,65 @@ function HTTPheadermatch () {
 # HTTPcontentmatch   URL  match
 #---------------------------------------------------------
 # needs NETCAT command for service check
+#
+#function HTTPcontentmatch () {
+#    MossheLog "HTTPcontentmatch $1 = $2"
+#    URL=$1
+#    MATCH=$2
+#
+#    SRV=`echo $URL | cut -d "/" -f 3 | cut -d ":" -f 1`
+#    PORT=`echo $URL | cut -d "/" -f 3 | cut -d ":" -f 2`
+#    if [ "$SRV" = "$PORT" ]; then PORT=80; fi
+#
+#    if [ -z `which wget` ]; then
+#	echo "${DATIM};$MYGROUP;$SRV;HTTPcontentmatch;UNDEF;-1;WGET not installed - cannot perform HTTP check"  >> $TEMPDIR/tmp.$$.collected.tmp
+#    else
+#	wget -q -O $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.rtn "$URL"
+#	fgrep "$MATCH" $TEMPDIR/tmp.$$.HTTPcontent_$SRV.rtn >  $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.match
+#
+#	if [ -s $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.match ]; then RTNCODE=200; STATUS="OK"; MSG="$MATCH found"
+#	elif [ -s $TEMPDIR/tmp.$$.HTTPcontent_$SRV.rtn ]; then RTNCODE=0; STATUS="WARN"; MSG="$MATCH missing"
+#	else RTNCODE=400; STATUS="ALERT"; MSG="Service unreachable"
+#	fi
+#	echo "${DATIM};$MYGROUP;$SRV;HTTPcontentmatch;$STATUS;$RTNCODE;$URL - $MSG"  >> $TEMPDIR/tmp.$$.collected.tmp
+#	rm $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.*
+#   fi
+#}
+
+#---------------------------------------------------------
+# HTTPcontentmatch   URL  match
+#---------------------------------------------------------
+
+
 
 function HTTPcontentmatch () {
-    MossheLog "HTTPcontentmatch $1 = $2"
     URL=$1
-    MATCH=$2
+	EXPECTED=$2
 
-    SRV=`echo $URL | cut -d "/" -f 3 | cut -d ":" -f 1`
-    PORT=`echo $URL | cut -d "/" -f 3 | cut -d ":" -f 2`
-    if [ "$SRV" = "$PORT" ]; then PORT=80; fi
+    typeset -i RTNCODE=0
+    SRV=`echo $URL | cut -d "/" -f 3`
 
-    if [ -z `which wget` ]; then
-	echo "${DATIM};$MYGROUP;$SRV;HTTPcontentmatch;UNDEF;-1;WGET not installed - cannot perform HTTP check"  >> $TEMPDIR/tmp.$$.collected.tmp
+    if [ -z `which lynx` ]; then
+	echo "${DATIM};$MYGROUP;$SRV;HTTPheader;UNDEF;-1;LYNX not installed - cannot perform HTTP check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	wget -q -O $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.rtn "$URL"
-	fgrep "$MATCH" $TEMPDIR/tmp.$$.HTTPcontent_$SRV.rtn >  $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.match
+	lynx -connect_timeout=30 --mime-header -dump $URL 2>/dev/null > $TEMPDIR/tmp.$$.HTTPcontent_$SRV.$GET.rtn
+	RTN=$?
+	RTNCODE=`head --lines=1 $TEMPDIR/tmp.$$.HTTPcontent_$SRV.$GET.rtn | cut -d " " -f 2`
 
-	if [ -s $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.match ]; then RTNCODE=200; STATUS="OK"; MSG="$MATCH found"
-	elif [ -s $TEMPDIR/tmp.$$.HTTPcontent_$SRV.rtn ]; then RTNCODE=0; STATUS="WARN"; MSG="$MATCH missing"
-	else RTNCODE=400; STATUS="ALERT"; MSG="Service unreachable"
+	fgrep "$EXPECTED" $TEMPDIR/tmp.$$.HTTPcontent_$SRV.$GET.rtn >  $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.${GET}.match
+
+	if [ $RTN -ne 0 ]; then STATUS="ALERT"; RTN="Service unreachable"
+	elif [ -s $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.${GET}.match ]; then STATUS="OK"
+	elif [ "$RTNCODE" -ge 400 ]; then STATUS="ALERT"
+	elif [ "$RTNCODE" -ge 200 ]; then STATUS="WARN"
+	else STATUS="UNDEF"
 	fi
-	echo "${DATIM};$MYGROUP;$SRV;HTTPcontentmatch;$STATUS;$RTNCODE;$URL - $MSG"  >> $TEMPDIR/tmp.$$.collected.tmp
+	echo "${DATIM};$MYGROUP;$SRV;HTTPcontentmatch;$STATUS;$RTNCODE;$URL - $RTN"  >> $TEMPDIR/tmp.$$.collected.tmp
 	rm $TEMPDIR/tmp.$$.HTTPcontent_${SRV}.*
     fi
 }
+
+
 
 #---------------------------------------------------------
 # FTPcheck  SERVER
@@ -448,10 +486,10 @@ function FTPcheck () {
     STATUS="UNDEF"
     typeset -i RTNCODE=0
 
-    if [ -z `which netcat` ]; then
+    if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;FTPcheck;UNDEF;-1;NC not installed - cannot perform network check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	RTN=`echo "quit" | nc -w $NETWAIT -q 1 -i 1 $SRV 21 | head -n 1`
+	RTN=`echo "quit" | nc -w $NETWAIT $SRV 21 | head -n 1`
 	if [ $? -gt 0 ]; 
 	     then STATUS="ALERT";
 	else
@@ -479,10 +517,10 @@ function SSHcheck () {
     STATUS="UNDEF"
     typeset -i RTNCODE=0
 
-    if [ -z `which netcat` ]; then
+    if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;SSHcheck;UNDEF;-1;NC not installed - cannot perform SSH check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	FULLRTN=`echo " " | nc -w $NETWAIT -q 1 -i 1 $SRV $PORT | head -n 1`
+	FULLRTN=`echo " " | nc -w $NETWAIT $SRV $PORT | head -n 1`
 	RTN=`echo "$FULLRTN" | head -c 4`
 	if [ "$RTN" = "SSH-" ]; then 
 	    STATUS="OK";
@@ -513,10 +551,10 @@ function POP3check () {
     STATUS="ALERT"
     typeset -i RTNCODE=0
 
-    if [ -z `which netcat` ]; then
+    if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;POP3check;UNDEF;-1;NC not installed - cannot perform network check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else	
-	RTN=`echo "quit" | nc -w $NETWAIT -q 1 -i 1 $SRV 110 | head --bytes=3`
+	RTN=`echo "quit" | nc -w $NETWAIT $SRV 110 | head --bytes=3`
 
 	if [ $? -gt 0 ]; then 
 	    STATUS="ALERT"
@@ -545,10 +583,10 @@ function IMAPcheck () {
     STATUS="ALERT"
     typeset -i RTNCODE=0
 
-    if [ -z `which netcat` ]; then
+    if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;IMAPcheck;UNDEF;-1;NC not installed - cannot perform network check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else	
-	RTN=`echo "IC Logout" | nc -w $NETWAIT -q 1 -i 1 $SRV 143 | head --bytes=4`
+	RTN=`echo "IC Logout" | nc -w $NETWAIT $SRV 143 | head --bytes=4`
 
 	if [ $? -gt 0 ]; then 
 	    STATUS="ALERT"
@@ -577,10 +615,10 @@ function SMTPcheck () {
     STATUS="UNDEF"
     typeset -i RTNCODE=0
 
-    if [ -z `which netcat` ]; then
+    if [ -z `which nc` ]; then
 	echo "${DATIM};$MYGROUP;$SRV;SMTPcheck;UNDEF;-1;NC not installed - cannot perform network check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	RTN=`echo "quit" | nc -w $NETWAIT -q 1 -i 1 $SRV 25 | head -n 1`
+	RTN=`echo "quit" | nc -w $NETWAIT $SRV 25 | head -n 1`
 	if [ $? -gt 0 ]; 
 	     then STATUS="DOWN";
 	else
