@@ -1,0 +1,30 @@
+#!/bin/sh
+
+# first compress
+
+# monthly
+find /var/log/mosshe -mtime +4  -type f \
+        -name "mosshe_log.[0-9][0-9][0-9][0-9]-[0-9][0-9]" \
+        -exec bzip2 {} \;
+
+# weekly
+find /var/log/mosshe -mtime +4  -type f \
+        -name "mosshe_log.[0-9][0-9][0-9][0-9]kw[0-9]" \
+        -exec bzip2 {} \;
+
+find /var/log/mosshe -mtime +4  -type f \
+        -name "mosshe_log.[0-9][0-9][0-9][0-9]kw[0-9][0-9]" \
+        -exec bzip2 {} \;
+
+#daily
+find /var/log/mosshe -mtime +4  -type f \
+        -name "mosshe_log.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" \
+        -exec bzip2 {} \;
+
+
+
+# then delete files older than 2 months
+
+find /var/log/mosshe -mtime +60  -type f \
+        -name "mosshe_log.*.bz2" \
+        -exec rm {} \;

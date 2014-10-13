@@ -1,0 +1,1184 @@
+#!/bin/sh
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# 	function library - please call with external script
+#
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2003- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+
+
+
+#############################################################################
+### System: uptime and updates
+#############################################################################
+
+#---------------------------------------------------------
+# ServerInfo - just prints process output to info file
+#---------------------------------------------------------
+function ServerInfo () {
+    CMD="$@"
+    echo "<p>&nbsp;</center><h2>$CMD</h2><hr><pre>" >> "$WWWDIR/srv_$MYNAME.txt.new"
+    /bin/sh -c "$CMD" 2>&1 | sed -e "s/</\&lt;/g" >> "$WWWDIR/srv_$MYNAME.txt.new"
+    echo "</pre><center><hr><p>" >> "$WWWDIR/srv_$MYNAME.txt.new"
+}
+
+
+#---------------------------------------------------------
+# Days Up Check - warn;alert - days
+#---------------------------------------------------------
+function DaysUpCheck () {
+    MossheLog "DaysUpCheck"
+	DAYSUP=$(($(cut -d '.' -f 1 /proc/uptime)/60/60/24))
+	if [ "$DAYSUP" -le $2 ]; then
+		STATUS="ALERT"
+	elif [ "$DAYSUP" -le $1 ]; then
+		STATUS="WARN"
+	else
+		STATUS="OK"
+	fi
+	echo "${DATIM};$MYGROUP;$MYNAME;Days Up;$STATUS;$DAYSUP;Uptime (in days): $DAYSUP" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+#---------------------------------------------------------
+# DebianUpdatesAvailable - if true alert; if false ok
+#---------------------------------------------------------
+function DebianUpdatesAvailable () {
+    MossheLog "DebianUpdatesAvailable"
+    if [ -x /etc/cron.hourly/mosshe.hourly ]; then
+    	if [ -s /tmp/mosshe.DebianUpdatesAvailable ]; then
+	    echo "${DATIM};$MYGROUP;$MYNAME;DebianUpdates;WARN;2;Debian updates are available" >> $TEMPDIR/tmp.$$.collected.tmp
+	else
+	    echo "${DATIM};$MYGROUP;$MYNAME;DebianUpdates;OK;0;Your Debian is up to date" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+    else	
+	echo "${DATIM};$MYGROUP;$MYNAME;DebianUpdates;UNDEF;1;Debian updates need hourly check - which is missing" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+
+#---------------------------------------------------------
+# Ubuntu Updates Available - if true alert; if false ok
+#---------------------------------------------------------
+function UbuntuUpdatesAvailable () {
+    MossheLog "UbuntuUpdatesAvailable"
+	# Ubuntu
+	if [ -x /usr/lib/update-notifier/update-motd-updates-available ]; then
+		RR=`/usr/lib/update-notifier/update-motd-updates-available | sed 's/\*/#/g'`
+		[ -z "$RR" ] && STATUS1=OK || STATUS1=ALERT
+		[ -z "$RR" ] && STATUS2=0 || STATUS2=1
+		RR=${RR:-No updates available}
+		echo "${DATIM};$MYGROUP;$MYNAME;Updates Available?;$STATUS1;$STATUS2;$RR" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+}
+
+#---------------------------------------------------------
+# Ubuntu Release Upgrade Check - if true alert; if false ok
+#---------------------------------------------------------
+function UbuntuReleaseUpgrade () {
+    MossheLog "UbuntuReleaseUpgrade"
+	# Ubuntu
+	if [ -x /usr/lib/update-manager/release-upgrade-motd ]; then
+		RR=`/usr/lib/update-manager/release-upgrade-motd | sed 's/\*/#/g'`
+		[ -z "$RR" ] && STATUS1=OK || STATUS1=ALERT
+		[ -z "$RR" ] && STATUS2=0 || STATUS2=1
+		RR=${RR:-No upgrades available}
+		echo "${DATIM};$MYGROUP;$MYNAME;Upgrades available?;$STATUS1;$STATUS2;$RR" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+}
+
+#---------------------------------------------------------
+# Ubuntu Reboot Required Check - if true alert; if false ok
+#---------------------------------------------------------
+function UbuntuRebootRequired () {
+    MossheLog "UbuntuRebootRequired"
+	# Ubuntu
+	if [ -x /usr/lib/update-notifier/update-motd-reboot-required ]; then
+		RR=`/usr/lib/update-notifier/update-motd-reboot-required | sed 's/\*/#/g'`
+		[ -z "$RR" ] && STATUS1=OK || STATUS1=ALERT
+		[ -z "$RR" ] && STATUS2=0 || STATUS2=1
+		RR=${RR:-No reboot required}
+		echo "${DATIM};$MYGROUP;$MYNAME;Reboot Required?;$STATUS1;$STATUS2;$RR" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+}
+
+################################################################
+###  File system and files
+################################################################
+
+
+#---------------------------------------------------------
+# HDCheck - device;warn;alert - MB free
+#---------------------------------------------------------
+function HDCheck () {
+    MossheLog "HDCheck $1"
+    HD=$1
+    typeset -i WARN ALERT; WARN=$2; ALERT=$3
+    typeset -i VALUE 
+    STATUS="OK"
+    
+    # Device MBtotal MBused MBfree Percent Mount
+    # /dev/sda1 98428 8823 84606 10% /
+    DF=`df -Plm | fgrep "$HD" | sed -e "s/  */ /g"`
+    if [ "$DF" ]; then
+        VALUE=`echo $DF | cut -d " " -f 4`
+        MOUNT=`echo $DF | cut -d " " -f 6`
+        MESSAGE="Disk free : $VALUE MB"
+        if [ $VALUE -lt $WARN ]; then STATUS="WARN"; MESSAGE="Disk tight : $VALUE MB"; fi
+        if [ $VALUE -lt $ALERT ]; then STATUS="ALERT"; MESSAGE="Disk critically full : $VALUE MB"; fi
+    else
+        STATUS=DOWN
+        VALUE=0
+        MOUNT=$HD
+        MESSAGE="HDD not mounted??"
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;HDD$HD;$STATUS;$VALUE;$MOUNT $MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# HDCheckGB - device;warn;alert - GB free
+#---------------------------------------------------------
+function HDCheckGB () {
+    MossheLog "HDCheckGB $1"
+    HD=$1
+    typeset -i WARN ALERT; WARN=$2; ALERT=$3
+    typeset -i VALUE GBVALUE
+    STATUS="OK"
+    
+    # Device MBtotal MBused MBfree Percent Mount
+    # /dev/sda1 98428 8823 84606 10% /
+    DF=`df -Plm | fgrep "$HD" | sed -e "s/  */ /g"`
+    if [ "$DF" ]; then
+        VALUE=`echo $DF | cut -d " " -f 4`
+	GBVALUE=$(( VALUE / 1024 ))
+        MOUNT=`echo $DF | cut -d " " -f 6`
+        MESSAGE="Disk free : $GBVALUE GB"
+        if [ $GBVALUE -lt $WARN ]; then STATUS="WARN"; MESSAGE="Disk tight : $VALUE GB"; fi
+        if [ $GBVALUE -lt $ALERT ]; then STATUS="ALERT"; MESSAGE="Disk critically full : $VALUE GB"; fi
+    else
+        STATUS=DOWN
+        VALUE=0
+        MOUNT=$HD
+        MESSAGE="HDD not mounted??"
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;HDD-GB$HD;$STATUS;$GBVALUE;$MOUNT $MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# HDparmState - device 
+#---------------------------------------------------------
+function HDparmState () {
+    MossheLog "HDparmState $1"
+    HD=$1
+    if [ -b "$HD" ]; then
+	# /sbin/hdparm -C /dev/sda 
+	# /dev/sda:
+	#  drive state is:  active/idle
+	STAT=`/sbin/hdparm -C $HD | fgrep 'drive state is:  active/idle'`
+	if [ -n "$STAT" ]; then
+    	    STATUS="OK"
+	    VALUE=100
+	    MESSAGE="$HD is active"
+	else
+    	    STATUS="OK"
+	    VALUE=0
+	    MESSAGE="$HD is in standby"
+	fi
+    else
+        STATUS="UNDEF"
+        VALUE=-100
+        MOUNT=$HD
+        MESSAGE="HDD $HD not a device??"
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;hdparm$HD;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# FileCheck: does file exist (e.g. Unix socket)
+#---------------------------------------------------------
+function FileCheck () {
+    MossheLog "FileCheck $1"
+     FN="$1"     
+
+     if [ -e $FN ]; then
+         MESSAGE="Files $FN exists"
+	 STATUS="OK"
+         CODE=0
+     else
+         STATUS="ALERT";
+         MESSAGE="File $FN does not exist"
+         CODE=999
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;file_${FN};$STATUS;$CODE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# FileTooOld: file last changed more than ... minutes ago?
+#---------------------------------------------------------
+function FileTooOld () {
+    MossheLog "FileTooOld $1"
+    FILENAME=$1
+    MAXAGE=$2
+
+    STATUS="UNDEF"
+    MESSAGE="Something wrong with FileTooOld check for file $FILENAME"
+    VALUE=0
+    
+    if [ ! -f "$FILENAME" ]; then
+    	STATUS="ALERT"
+	MESSAGE="Error: file $FILENAME does not exist "
+	VALUE=3
+    else
+    	typeset -i FTIME=`ls -l --time-style=+%s $FILENAME | cut -d " " -f 6`
+    	typeset -i LTIME=`date +%s --date="$MAXAGE minutes ago"`
+    	if [ $FTIME -lt $LTIME ]; then 
+    	    STATUS="WARN"
+	    MESSAGE="Problem: file $FILENAME older than $MAXAGE minutes "
+	    VALUE=2
+	else
+    	    STATUS="OK"
+	    MESSAGE="file $FILENAME seems to be quite current "
+	    VALUE=1
+	fi
+    fi
+
+    echo "${DATIM};$MYGROUP;$MYNAME;filetooold_$FILENAME;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+#---------------------------------------------------------
+# FileTooBig: filesize bigger than WARN KiloBytes
+#---------------------------------------------------------
+function FileTooBig () {
+    MossheLog "FileTooBig $1"
+    FILENAME=$1
+    typeset -i WARN=$2
+
+    STATUS="UNDEF"
+    MESSAGE="Something wrong with FileTooBig check for file $FILENAME"
+    VALUE=0
+    
+    if [ ! -f "$FILENAME" ]; then
+    	STATUS="ALERT"
+	MESSAGE="Error: file $FILENAME does not exist "
+    else
+    	typeset -i VALUE=`ls -sk1 $FILENAME | cut -d " " -f 1`
+    	if [ $VALUE -gt $WARN ]; then 
+    	    STATUS="WARN"
+	    MESSAGE="Problem: file $FILENAME (${VALUE}kB) bigger tham $WARN kB "
+	else
+    	    STATUS="OK"
+	    MESSAGE="file $FILENAME seems to be small enough (${VALUE} KB)"
+	fi
+    fi
+
+    echo "${DATIM};$MYGROUP;$MYNAME;filetoobig_$FILENAME;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# FileLines: lines in file bigger than WARN / ALERT
+#---------------------------------------------------------
+function FileLines () {
+    MossheLog "FileLines $1 $2"
+    FILENAME=$1
+    typeset -i WARN=$2
+
+    STATUS="UNDEF"
+    MESSAGE="Something wrong with FileLines check for file $FILENAME"
+    VALUE=0
+    
+    if [ ! -f "$FILENAME" ]; then
+    	STATUS="ALERT"
+	MESSAGE="Error: file $FILENAME does not exist "
+    else
+    	typeset -i VALUE=`wc -l $FILENAME | cut -d ' ' -f 1`
+    	if [ $VALUE -gt $WARN ]; then 
+    	    STATUS="WARN"
+	    MESSAGE="Problem: file $FILENAME (${VALUE} lines) longer tham $WARN kB "
+	else
+    	    STATUS="OK"
+	    MESSAGE="file $FILENAME seems to be short enough (${VALUE} lines)"
+	fi
+    fi
+
+    echo "${DATIM};$MYGROUP;$MYNAME;filelines_$FILENAME;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+
+################################################################
+###  CPU and processes
+################################################################
+
+
+#---------------------------------------------------------
+# LoadCheck 5min: Warning / Alert
+#---------------------------------------------------------
+function LoadCheck () {
+    MossheLog "LoadCheck"
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i LOAD
+    MESSAGE=`cat /proc/loadavg | cut -d " " -f 3 | sed -e "s/ //g"`
+    LOAD=`echo $MESSAGE | cut -d "." -f 1`
+    STATUS="OK"
+    STAT="Normal Load";
+    if [ $LOAD -ge $WARN ]; then STATUS="WARN"; STAT="High Load"; fi
+    if [ $LOAD -ge $ALERT ]; then STATUS="ALERT"; STAT="Critical Load"; fi
+    echo "${DATIM};$MYGROUP;$MYNAME;load;$STATUS;$LOAD;$STAT: $MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# LoadCheckPercent 5min: Warning / Alert
+#---------------------------------------------------------
+function LoadCheckPercent () {
+    MossheLog "LoadCheckPercent"
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i LOAD
+    MESSAGE=`cat /proc/loadavg | cut -d " " -f 3 | sed -e "s/ //g"`
+    LOAD=`echo $MESSAGE | sed -e "s/\.//" | sed -e "s/^0*//g"`
+    STATUS="OK"
+    STAT="Normal Load";
+    if [ $LOAD -ge $WARN ]; then STATUS="WARN"; STAT="High Load"; fi
+    if [ $LOAD -ge $ALERT ]; then STATUS="ALERT"; STAT="Critical Load"; fi
+    echo "${DATIM};$MYGROUP;$MYNAME;loadpercent;$STATUS;$LOAD;$STAT: $MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# LoadPercentHektoCheck 5min: Warning / Alert
+#---------------------------------------------------------
+function LoadHektoCheck () {
+    echo "${DATIM};$MYGROUP;$MYNAME;loadhekto;UNDEF;0;LoadHektoCheck is wrong prefix - use LoadPercentCheck instead." >> $TEMPDIR/tmp.$$.collected.tmp 
+}
+
+
+#---------------------------------------------------------
+# Processes: Warning / Alert
+#---------------------------------------------------------
+function ProcessCheck () {
+    MossheLog "ProcessCheck"
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i PROCESSES
+    PROCESSES=`ps -A | wc -l`
+    STATUS="OK"
+    MESSAGE="Normal processes count"
+    if [ $PROCESSES -ge $WARN ]; then STATUS="WARN"; MESSAGE="Many processes running"; fi
+    if [ $PROCESSES -ge $ALERT ]; then STATUS="ALERT"; MESSAGE="Abnormal processes count"; fi
+    echo "${DATIM};$MYGROUP;$MYNAME;processes;$STATUS;$PROCESSES;$MESSAGE: $PROCESSES" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# Zombie Processes: Warning Alert
+#---------------------------------------------------------
+function ZombieCheck () {
+    MossheLog "ZombieCheck"
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i PROCESSES
+    TMPFILE="$TEMPDIR/tmp.$$.$HOSTNAME.PSSTATUS" 
+    ps -A | fgrep "defunct" > $TMPFILE
+    
+    PROCESSES=`cat $TMPFILE | wc -l`    
+
+    if [ $PROCESSES -eq 0 ]; then 
+	PROCNAMES='ok'
+    else
+	PROCNAMES=""
+	for A in `cat $TMPFILE | cut -d ":" -f 2- |cut -d " " -f 2-`; do
+            PROCNAMES="$PROCNAMES +++ $A"
+	done
+    fi
+    rm $TMPFILE
+
+    MESSAGE="Zombie processes: $PROCESSES = $PROCNAMES"
+    STATUS="OK"
+    if [ $PROCESSES -gt $WARN ]; then STATUS="WARN"; fi
+    if [ $PROCESSES -ge $ALERT ]; then STATUS="ALERT"; fi
+
+    echo "${DATIM};$MYGROUP;$MYNAME;zombies;$STATUS;$PROCESSES;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# ProcCheck: does a process with this string run?
+#---------------------------------------------------------
+function ProcCheck () {
+    MossheLog "ProcCheck"
+     typeset -i PSNUM=`ps ax | fgrep "$1" | wc -l`     
+
+     if [ $PSNUM -gt 0 ]; then 
+         MESSAGE="Process $1 running"
+	 STATUS="OK"
+     else
+         STATUS="ALERT";
+         MESSAGE="No process $1 found"
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;proc_$1;$STATUS;$PSNUM;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# Users: Warning interact.shell / Critical root+shell/su
+#---------------------------------------------------------
+function ShellCheck () {
+    MossheLog "ShellCheck"
+    typeset -i RMAX UMAX; RMAX=$1; UMAX=$2
+    typeset -i RUSERS RUSERSB RUSERSS
+    typeset -i USERS
+    RUSERSS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep root | fgrep -v fgrep | wc -l`
+    RUSERSB=`ps -eo pid,user,ruser,tty,args | fgrep " -su" | fgrep -v fgrep | wc -l`
+    RUSERS=${RUSERSB}+${RUSERSS}
+    USERS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | wc -l`
+
+    MESSAGE="No notable interactive shells"
+    STATUS="OK"
+    if [ $USERS -gt $UMAX ]; then 
+	STATUS="WARN";
+	MESSAGE="$USERS interactive shells running"
+    fi
+    if [ $RUSERS -gt $RMAX ]; then 
+	STATUS="ALERT"; 
+	MESSAGE="$RUSERS root shells (bash, su) running"
+	USERS="$RUSERS"
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;shells;$STATUS;$USERS;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+#---------------------------------------------------------
+# Memory: min. free (buffer/cache corrected)
+#---------------------------------------------------------
+function MemCheck () {
+  MossheLog "MemCheck"
+  if [ -z `which free` ]; then
+     echo "${DATIM};$MYGROUP;$MYNAME;memory (general);UNDEF;0;FREE not installed - cannot perform MEMORY/RAM check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+     typeset -i WMAX=$1; 
+     typeset -i AMAX=$2;
+     typeset -i TOTAL=`free -m | fgrep "buffers/cache:" | sed -e "s/  */ /g" | cut -d " " -f 4`
+     
+     MESSAGE="Memory free ($TOTAL MB)"
+     STATUS="OK"
+     if [ $TOTAL -lt $WMAX ]; then 
+         STATUS="WARN";
+         MESSAGE="Memory congested ($TOTAL MB free)"
+     fi
+     if [ $TOTAL -lt $AMAX ]; then
+         STATUS="ALERT";
+         MESSAGE="Memory tight ($TOTAL MB free)"
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;memory;$STATUS;$TOTAL;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+#---------------------------------------------------------
+# Swap:  page in/out per second
+#---------------------------------------------------------
+function SwapCheck () {
+  MossheLog "SwapCheck"
+  if [ -z `which vmstat` ]; then
+     echo "${DATIM};$MYGROUP;$MYNAME;swapping;UNDEF;0;VMSTAT not installed - cannot perform swap activity check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+     typeset -i WMAX=$1; 
+     typeset -i AMAX=$2;
+     typeset -i SI=`vmstat | tail -1 | sed -e "s/  */ /g" | cut -d " " -f 8`
+     typeset -i SO=`vmstat | tail -1 | sed -e "s/  */ /g" | cut -d " " -f 9`
+     typeset -i SWAPS=${SI}+${SO}
+     
+     MESSAGE="System memory seldomly swapping ($SWAPS pages/s)"
+     STATUS="OK"
+     if [ $TOTAL -lt $WMAX ]; then 
+         STATUS="WARN";
+         MESSAGE="System memory swapping ($SWAPS pages/s)"
+     fi
+     if [ $TOTAL -lt $AMAX ]; then
+         STATUS="ALERT";
+         MESSAGE="System memory heavily swapping ($SWAPS pages/s)"
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;swapping;$STATUS;$TOTAL;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+################################################################
+###  Queues
+################################################################
+
+
+#---------------------------------------------------------
+# Printers: Queuename / max queue size (999=offline)
+#---------------------------------------------------------
+function PrintCheck () {
+  MossheLog "PrintCheck"
+  if [ -z `which lpq` ]; then
+     echo "${DATIM};$MYGROUP;$MYNAME;printer (general);UNDEF;0;LPQ not installed - cannot perform PRINTER check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+     LP="$1"
+     
+
+     typeset -i MAXQUEUE=$2
+     typeset -i QUEUELEN=`lpq -P $LP | wc -l`
+     QUEUELEN=${QUEUELEN}-2
+     
+     MESSAGE="Printer $LP ok with $QUEUELEN print jobs in queue"
+     STATUS="OK"
+     
+     if [ $QUEUELEN -gt $MAXQUEUE ]; then 
+         STATUS="WARN";
+         MESSAGE="More than $MAXQUEUE jobs (${QUEUELEN}) for printer $LP"
+     fi
+     
+     lpq -P $1 | fgrep "is ready" > /dev/null
+     if [ $? -gt 0 ]; then
+         STATUS="ALERT";
+         MESSAGE="Printer $LP is down - $QUEUELEN jobs pending"
+         QUEUELEN=999
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;lpt_${LP};$STATUS;$QUEUELEN;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+#---------------------------------------------------------
+# Mail-Queue: max queue size (warn alert)
+#---------------------------------------------------------
+function MailqCheck () {
+  MossheLog "MailqCheck"
+  if [ -z `which mailq` ]; then
+     echo "${DATIM};$MYGROUP;$MYNAME;mailq (general);UNDEF;0;MAILQ not installed - cannot perform MailQueue check"  >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+     typeset -i WARN="$1"
+     typeset -i ALERT=$2
+     typeset -i QUEUELEN=`mailq | wc -l`
+     QUEUELEN=${QUEUELEN}/4
+     
+     MESSAGE="Mail Queue length: ok with $QUEUELEN mails in queue"
+     STATUS="OK"
+     
+     if [ $QUEUELEN -gt $WARN ]; then 
+        STATUS="WARN";
+	MESSAGE="Notable Mail Queue size: $QUEUELEN mails in queue"
+	if [ $QUEUELEN -gt $ALERT ]; then	
+            STATUS="ALERT";
+	    MESSAGE="Excessive Mail Queue size: $QUEUELEN mails in queue"
+	fi
+     fi
+     
+     echo "${DATIM};$MYGROUP;$MYNAME;mailq;$STATUS;$QUEUELEN;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+################################################################
+###  Hardware
+################################################################
+
+
+#---------------------------------------------------------
+# Check for CPU temp / fan speed / MB voltage...  :  Param  Warn  Alert  "Description"
+# Uses mbmon program (http://freshmeat.net/projects/xmbmon)
+#---------------------------------------------------------
+function MBMonCheck () {
+    MossheLog "MBMonCheck $1 $4"
+    PARAM=$1                # TEMP0, TEMP1...
+    SWARNVAL=$2             # 38.0
+    SALERTVAL=$3            # 40.0
+    DESCRIP=$4              # "CPU temp"
+    
+    if ! [ -z `which mbmon` ]; then
+	echo "${DATIM};$MYGROUP;$MYNAME;$PARAM;UNDEF;0;MBMON not installed - cannot perform $PARAM check" >> $TEMPDIR/tmp.$$.collected.tmp
+    else
+    	SVALUE=`$MBMON -c 1 -r | grep "$PARAM" | sed -e "s/$PARAM *: *//"`
+	FLOATP=`expr index $SVALUE \.`
+	if [ "$FLOATP" != "" ] ; then
+     	    typeset -i VALUE=${SVALUE/./}
+	    typeset -i ALERTVAL=${SALERTVAL/./}
+	    typeset -i WARNVAL=${SWARNVAL/./}
+	else
+     	    typeset -i VALUE=${SVALUE}
+	    typeset -i ALERTVAL=$SALERTVAL
+	    typeset -i WARNVAL=$SWARNVAL
+	fi
+                                               
+    	if [ "$VALUE" -gt $ALERTVAL ]; then
+	    STATUS="ALERT"
+	    MESSAGE="$DESCRIP: $SVALUE exceeds ALERT value $SALERTVAL"
+    	elif [ "$VALUE" -gt $WARNVAL ]; then
+	    STATUS="WARN"
+	    MESSAGE="$DESCRIP: $SVALUE exceeds WARN value $SWARNVAL"
+    	else
+	    STATUS="OK"
+	    MESSAGE="$DESCRIP: $SVALUE in range"
+    	fi
+	echo "${DATIM};$MYGROUP;$MYNAME;$PARAM;$STATUS;$SVALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+    
+
+#---------------------------------------------------------
+# Check for hardware sensor :  "Match" TempSensorNr  "Description"  Warn  Alert
+# Uses "sensors" program (lm-sensors packet, first run "sensors-probe")
+#---------------------------------------------------------
+function HardwareSensor () {      # Match  Description  WarnTemp  AlertTemp
+    MossheLog "HardwareSensor $1 $2"
+    typeset PARAM=$1
+    DESCR=$2
+    typeset -i WARN=$3
+    typeset -i ALERT=$4
+
+    if [ -z `which sensors` ]; then
+        echo "${DATIM};$MYGROUP;$MYNAME;$PARAM;UNDEF;0;LM-SENSORS not installed - cannot perform temperature check" >> $TEMPDIR/tmp.$$.collected.tmp
+    else
+        typeset -i VALUE=`sensors | grep "^${PARAM}:" | cut -d ":" -f 2 | sed -e "s/^ *//g" | cut -d "." -f 1 | cut -d " " -f 1 | sed -e "s/\+//g" `
+        if [ "$VALUE" -gt $ALERT ]; then
+            STATUS="ALERT"
+            MESSAGE="Hardware failing? $DESCR (${PARAM}) = $VALUE is too high"
+        elif [ "$VALUE" -gt $WARN ]; then
+            STATUS="WARN"
+            MESSAGE="Hardware problematic: $DESCR (${PARAM}) with $VALUE above $WARN"
+        else
+            STATUS="OK"
+            MESSAGE="Hardware ok $DESCR (${PARAM}) ok: $VALUE"
+        fi
+        echo "${DATIM};$MYGROUP;$MYNAME;Sensor_$DESCR;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+
+#---------------------------------------------------------
+# Check for hardware sensor :  "Match" TempSensorNr  "Description"  Warn  Alert
+# Uses "sensors" program (lm-sensors packet, first run "sensors-probe")
+#---------------------------------------------------------
+function HardwareSensorBetween () {      # Match  Description  AlertLow  WarnHigh
+    MossheLog "HardwareSensorBetween $1 $2"
+    typeset PARAM=$1
+    DESCR=$2
+    typeset -i ALERTLOW=$3
+    typeset -i WARNHIGH=$4
+
+    if [ -z `which sensors` ]; then
+        echo "${DATIM};$MYGROUP;$MYNAME;$PARAM;UNDEF;0;LM-SENSORS not installed - cannot perform temperature check" >> $TEMPDIR/tmp.$$.collected.tmp
+    else
+        typeset -i VALUE=`sensors | grep "^${PARAM}:" | cut -d ":" -f 2 | sed -e "s/^ *//g" | cut -d "." -f 1 | cut -d " " -f 1 | sed -e "s/\+//g" `
+        if [ "$VALUE" -lt $ALERTLOW ]; then
+            STATUS="ALERT"
+            MESSAGE="Hardware failing? $DESCR (${PARAM}) = $VALUE too low"
+        elif [ "$VALUE" -gt $WARNHIGH ]; then
+            STATUS="WARN"
+            MESSAGE="Hardware problematic: $DESCR (${PARAM}) = $VALUE too high"
+        else
+            STATUS="OK"
+            MESSAGE="Hardware ok $DESCR (${PARAM}) ok: $VALUE"
+        fi
+        echo "${DATIM};$MYGROUP;$MYNAME;SensorBetween_$DESCR;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+
+#---------------------------------------------------------
+# Deprecated Hardware* checks
+#---------------------------------------------------------
+function HardwareTemp () {  
+    echo "${DATIM};$MYGROUP;$MYNAME;Temp$1;UNDEF;0;HardwareTemp check is deprecated - use HardwareSensor instead." >> $TEMPDIR/tmp.$$.collected.tmp 
+}
+function HardwareFan () {  
+    echo "${DATIM};$MYGROUP;$MYNAME;Fan$1;UNDEF;0;HardwareFan check is deprecated - use HardwareSensor instead." >> $TEMPDIR/tmp.$$.collected
+}
+
+
+#---------------------------------------------------------
+# SmartMonHealth:  health status passed or not  DEVTYPE   DEVICE
+#---------------------------------------------------------
+function SmartMonHealth () {
+    MossheLog "SmartMonHealth $1 $2"
+    DEVTYPE=$1
+    DEVICE=$2
+
+    if [ -z `which smartctl` ]; then
+        echo "${DATIM};$MYGROUP;$MYNAME;hd_$DEVICE_$DEVTYPE;UNDEF;0;SMARTCTL (smartmontools) not installed - cannot perform disk health check" >> $TEMPDIR/tmp.$$.collected.tmp
+        VALUE=0
+    else
+        STATE=`smartctl -H -d $DEVTYPE $DEVICE | grep "^SMART overall-health self-assessment test result: " | cut -d " " -f 6-`
+        if [ "$STATE" = "PASSED" ]; then
+            STATUS="OK"
+            MESSAGE="Disk $DEVTYPE on $DEVICE healthy"
+            VALUE=1
+        else
+            STATUS="ALERT"
+            MESSAGE="Disk $DEVTYPE on $DEVICE failing: $STATE"
+            VALUE=3
+        fi
+        echo "${DATIM};$MYGROUP;$MYNAME;hd_$DEVICE_$DEVTYPE;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+
+#---------------------------------------------------------
+# Raid3ware:  health status passed or not   ControllerNo.  Partition
+#---------------------------------------------------------
+function Raid3ware () {
+    MossheLog "Raid3ware $1 $2"
+    CTRL=$1
+    UNIT=$2
+
+    if [ -z `which tw_cli` ]; then
+        echo "${DATIM};$MYGROUP;$MYNAME;3ware_$CTRL_$UNIT;UNDEF;0;tw_cli not installed - cannot perform 3ware RAID check" >> $TEMPDIR/tmp.$$.collected.tmp
+        VALUE=0
+    else
+        STATE=`tw_cli /c$CTRL show | grep "^$UNIT " | fgrep "RAID-"  | cut -d " " -f 8-9`
+        if [ "$STATE" = " OK" -o "$STATE" = "OK " ]; then
+            STATUS="OK"
+            MESSAGE="3ware Controller $CTRL unit $UNIT healthy"
+            VALUE=1
+        else
+            STATUS="ALERT"
+            MESSAGE="3ware Controller $CTRL unit $UNIT has problem: $STATE"
+            VALUE=3
+        fi
+        echo "${DATIM};$MYGROUP;$MYNAME;3ware_$RAID_$UNIT;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+
+
+#---------------------------------------------------------
+# Software-RAID status:  (none)
+#	Depends on /proc existence. 
+#	Works with md0 (should be extended for more than one device)
+#	but running more than one software RAID array is not recommended anyway. 
+#	WARN when syncing, ALERT when a partition has failed.
+#---------------------------------------------------------
+function RaidCheck () {
+    MossheLog "RaidCheck"
+    typeset -i NUM=0
+    MDSTAT="/proc/mdstat"
+    if ! [ -f $MDSTAT ]; then
+	echo "${DATIM};$MYGROUP;$MYNAME;RAID;UNDEF;0;$MDSTAT not present - cannot perform RAID check" >> $TEMPDIR/tmp.$$.collected.tmp
+    else
+	BLOCKS=$(grep blocks $MDSTAT)
+	DEVICE=$(grep md $MDSTAT)
+	#    easier but more processes:
+	#    typeset -i FAIL=0
+	#    typeset -i SYNC=0
+	#    FAIL=$(grep blocks $MDSTAT | grep -c _)
+	#    SYNC=$(grep -c resync $MDSTAT)
+	XBLOCKS="${BLOCKS/_/}"
+	XDEVICE="${DEVICE/resync/}"
+	STATUS="OK"
+	MESSAGE="$DEVICE - $BLOCKS"
+	if [ "$DEVICE" != "$XDEVICE" ]; then
+	    STATUS="WARN"
+	    MESSAGE="RESYNC "${DEVICE}
+	    NUM=1
+	fi
+	if [ "$BLOCKS" != "$XBLOCKS" ]; then
+	    STATUS="ALERT"
+	    MESSAGE="FAILED "${DEVICE}
+	    NUM=2
+	fi
+	echo "${DATIM};$MYGROUP;$MYNAME;RAID;$STATUS;$NUM;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+    fi
+}
+
+													  
+################################################################
+###  Network
+################################################################
+
+
+#---------------------------------------------------------
+# NetworkErrors:  interface  WARN:percentage  ALERT:percentage
+#---------------------------------------------------------
+function NetworkErrorsCheck () {
+  MossheLog "NetworkErrorsCheck $1"
+  if [ -z `which netstat` ]; then
+    echo "${DATIM};$MYGROUP;$MYNAME;networktraffic (general);UNDEF;0;NETSTAT not installed - cannot perform NETWORKTRAFFIC check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    IFACE="$1"
+    typeset -i WARNTRAF=$2
+    typeset -i ALERTRAF=$3
+    
+#eth0      Link encap:Ethernet  HWaddr FE:FD:D5:CB:F4:BC  
+#          inet addr:213.203.244.188  Bcast:213.203.244.188  Mask:255.255.255.255
+#          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+#          RX packets:27259082 errors:0 dropped:0 overruns:0 frame:0
+#          TX packets:30825801 errors:0 dropped:0 overruns:0 carrier:0
+#          collisions:0 txqueuelen:1000 
+#          RX bytes:3895048735 (3.6 GiB)  TX bytes:2141303265 (1.9 GiB)
+#          Interrupt:5 
+
+    STAT=`/sbin/ifconfig $IFACE | fgrep "RX packets"`
+    typeset -i RXOK=`echo $STAT | cut -d ":" -f 2 | cut -d " " -f 1`
+    typeset -i RXE1=`echo $STAT | cut -d ":" -f 3 | cut -d " " -f 1`
+    typeset -i RXE2=`echo $STAT | cut -d ":" -f 4 | cut -d " " -f 1`
+    typeset -i RXE3=`echo $STAT | cut -d ":" -f 5 | cut -d " " -f 1`
+    typeset -i RXERR=$(( RXE1 + RXE2 + RXE3 ))
+    typeset -i RXPERC=$(( RXERR * 100 / ( RXOK + 1 ) ))
+
+    STAT=`/sbin/ifconfig $IFACE | fgrep "TX packets"`
+    typeset -i TXOK=`echo $STAT | cut -d ":" -f 2 | cut -d " " -f 1`
+    typeset -i TXE1=`echo $STAT | cut -d ":" -f 3 | cut -d " " -f 1`
+    typeset -i TXE2=`echo $STAT | cut -d ":" -f 4 | cut -d " " -f 1`
+    typeset -i TXE3=`echo $STAT | cut -d ":" -f 5 | cut -d " " -f 1`
+    typeset -i TXERR=$(( TXE1 + TXE2 + TXE3 ))
+    typeset -i TXPERC=$(( TXERR * 100 / (TXOK + 1)))
+    
+    typeset -i PERC=$(( TXPERC + RXPERC ))
+	
+    MESSAGE="No notable network errors on interface $IFACE"
+    STATUS="OK"	     
+
+    if [ $PERC -gt $WARNTRAF  ]; then
+	STATUS="WARN";
+	MESSAGE="Traffic errors on $IFACE: $RXPERC % in / $TXPERC % out"
+    fi
+    if [ $PERC -gt $ALERTRAF  ]; then
+	STATUS="ALERT";
+	MESSAGE="Traffic errors on $IFACE: $RXPERC % in / $TXPERC % out"
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;net_errors_${IFACE};$STATUS;$PERC;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+#---------------------------------------------------------
+# NetworkTraffic:  interface  WARN:byte/s  ALERT:byte/s
+#---------------------------------------------------------
+function NetworkTrafficCheck () {
+    MossheLog "NetworkTrafficCheck $1"
+  if [ -z `which netstat` ]; then
+    echo "${DATIM};$MYGROUP;$MYNAME;networktraffic (general);UNDEF;0;NETSTAT not installed - cannot perform NETWORKTRAFFIC check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    IFACE="$1"
+    typeset -i WARNTRAF=$2
+    typeset -i ALERTRAF=$3
+    
+    NOW=`date +%s`
+    STAT=`/sbin/ifconfig $IFACE | fgrep "RX bytes"`
+#          RX bytes:153523789 (146.4 MiB)  TX bytes:153523789 (146.4 MiB)
+    typeset -i RX=`echo $STAT | cut -d ":" -f 2 | cut -d " " -f 1`
+    typeset -i TX=`echo $STAT | cut -d ":" -f 3 | cut -d " " -f 1`
+    typeset -i TOTAL=$(( RX + TX ))
+    
+    if ! [ -f $DATADIR/stat.networktraffic.$IFACE ]; then
+	MESSAGE="Initializing network traffic analysis on interface $IFACE"
+	STATUS="UNDEF"
+    else     
+	OLDSEC=`cat $DATADIR/stat.networktraffic.$IFACE | cut -d " " -f 1`
+	OLDTRAFFIC=`cat $DATADIR/stat.networktraffic.$IFACE | cut -d " " -f 2`
+	
+	typeset -i TRAFPERSEC=$(( (TOTAL - OLDTRAFFIC) / ( NOW - OLDSEC + 1) / 128 ))
+	# 1024 * 8 ))
+     
+	MESSAGE="Network traffic on interface $IFACE ok: $TRAFPERSEC kbit/sec"
+	STATUS="OK"	     
+
+     	if [ $TRAFPERSEC -gt $WARNTRAF ]; then 
+	    STATUS="WARN";
+	    MESSAGE="High traffic on $IFACE: $TRAFPERSEC kbit/sec"
+	fi
+     	if [ $TRAFPERSEC -gt $ALERTRAF ]; then
+	    STATUS="ALERT";
+	    MESSAGE="Excessive traffic on $IFACE: $TRAFPERSEC kbit/sec"
+	fi
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;net_traffic_${IFACE};$STATUS;$TRAFPERSEC;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp 
+    echo "$NOW $TOTAL" > $DATADIR/stat.networktraffic.$IFACE
+  fi
+}
+
+#---------------------------------------------------------
+# NetworkBandwidth:  interface  WARN:GByte/month  ALERT:GB/mth
+#---------------------------------------------------------
+function NetworkBandwidth () {
+    MossheLog "NetworkBandwidth $1"
+  if [ -z `which netstat` ]; then
+    echo "${DATIM};$MYGROUP;$MYNAME;networkbandwidth (general);UNDEF;0;NETSTAT not installed - cannot perform NETWORKTRAFFIC check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    IFACE="$1"
+    typeset -i WARNTRAF=$2
+    typeset -i ALERTRAF=$3
+    
+    NOW=`date +%s`
+    STAT=`/sbin/ifconfig $IFACE | fgrep "RX bytes"`
+#          RX bytes:153523789 (146.4 MiB)  TX bytes:153523789 (146.4 MiB)
+    typeset -i RX=`echo $STAT | cut -d ":" -f 2 | cut -d " " -f 1`
+    typeset -i TX=`echo $STAT | cut -d ":" -f 3 | cut -d " " -f 1`
+    typeset -i TOTAL=$(( RX + TX ))
+    
+    if ! [ -f $DATADIR/stat.networkbandwidth.$IFACE ]; then
+	MESSAGE="Initializing network traffic analysis on interface $IFACE"
+	STATUS="UNDEF"
+    else     
+	OLDSEC=`cat $DATADIR/stat.networkbandwidth.$IFACE | cut -d " " -f 1`
+	OLDTRAFFIC=`cat $DATADIR/stat.networkbandwidth.$IFACE | cut -d " " -f 2`
+	
+	typeset -i BWPERMONTH=$(( (TOTAL - OLDTRAFFIC) / ( NOW - OLDSEC + 1) / 414 ))
+	# / k1024 / M1024 / G1024 * h3600 * d24 * m30
+     
+	MESSAGE="Bandwidth usage on interface $IFACE ok: $BWPERMONTH  GB/month"
+	STATUS="OK"	     
+
+     	if [ $BWPERMONTH -gt $WARNTRAF ]; then 
+	    STATUS="WARN";
+	    MESSAGE="High bandwidth usage on interface $IFACE ok: $BWPERMONTH GB/month"
+	fi
+     	if [ $BWPERMONTH -gt $ALERTRAF ]; then
+	    STATUS="ALERT";
+	    MESSAGE="Excessive bandwidth usage on interface $IFACE ok: $BWPERMONTH GB/month"
+	fi
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;net_bandwidth_${IFACE};$STATUS;$BWPERMONTH;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp 
+    echo "$NOW $TOTAL" > $DATADIR/stat.networkbandwidth.$IFACE
+  fi
+}
+
+#---------------------------------------------------------
+# NetworkLinuxTraffic:  interface  WARN:byte/s  ALERT:byte/s
+#---------------------------------------------------------
+function NetworkLinuxTrafficCheck () {
+    MossheLog "NetworkLinuxTrafficCheck $1"
+  if [ -e /proc/net/dev ]; then
+    IFACE="$1"
+    typeset -i WARNTRAF=$2
+    typeset -i ALERTRAF=$3
+    
+    NOW=`date +%s`
+    # eth0: 66342695 458262355 0 0 0 0 0 0 249959870 1184448 0 0 0 0 0 0
+    STAT=`/bin/cat /proc/net/dev | fgrep $IFACE | sed -e 's/  */ /g'`
+    typeset -i RX=`echo $STAT | cut -d " " -f 2`
+    typeset -i TX=`echo $STAT | cut -d ":" -f 10`
+    typeset -i TOTAL=$(( RX + TX ))
+    
+    if ! [ -f $DATADIR/stat.networktraffic.$IFACE ]; then
+	MESSAGE="Initializing network traffic analysis on interface $IFACE"
+	STATUS="UNDEF"
+    else     
+	OLDSEC=`cat $DATADIR/stat.networktraffic.$IFACE | cut -d " " -f 1`
+	OLDTRAFFIC=`cat $DATADIR/stat.networktraffic.$IFACE | cut -d " " -f 2`
+	
+	typeset -i TRAFPERSEC=$(( (TOTAL - OLDTRAFFIC) / ( NOW - OLDSEC + 1) / 128 ))
+     
+	MESSAGE="Network traffic on interface $IFACE ok: $TRAFPERSEC kbit/sec"
+	STATUS="OK"	     
+
+     	if [ $TRAFPERSEC -gt $WARNTRAF ]; then 
+	    STATUS="WARN";
+	    MESSAGE="High traffic on $IFACE: $TRAFPERSEC kbit/sec"
+	fi
+     	if [ $TRAFPERSEC -gt $ALERTRAF ]; then
+	    STATUS="ALERT";
+	    MESSAGE="Excessive traffic on $IFACE: $TRAFPERSEC kbit/sec"
+	fi
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;net_ltraffic_${IFACE};$STATUS;$TRAFPERSEC;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp 
+    echo "$NOW $TOTAL" > $DATADIR/stat.networktraffic.$IFACE
+  else
+    echo "${DATIM};$MYGROUP;$MYNAME;networktraffic (general);UNDEF;0;Cannot find /proc/net/dev - cannot perform NETWORKLINUXTRAFFIC check" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+#---------------------------------------------------------
+# NetworkLinuxBandwidth:  interface  WARN:GByte/month  ALERT:GB/mth
+#---------------------------------------------------------
+function NetworkLinuxBandwidth () {
+    MossheLog "NetworkLinuxBandwidth $1"
+  if [ -e /proc/net/dev ]; then
+    IFACE="$1"
+    typeset -i WARNTRAF=$2
+    typeset -i ALERTRAF=$3
+    
+    NOW=`date +%s`
+    # eth0: 66342695 458262355 0 0 0 0 0 0 249959870 1184448 0 0 0 0 0 0
+    STAT=`/bin/cat /proc/net/dev | fgrep $IFACE | sed -e 's/  */ /g'`
+    typeset -i RX=`echo $STAT | cut -d " " -f 2`
+    typeset -i TX=`echo $STAT | cut -d ":" -f 10`
+    typeset -i TOTAL=$(( RX + TX ))
+    
+    if ! [ -f $DATADIR/stat.networkbandwidth.$IFACE ]; then
+	MESSAGE="Initializing network traffic analysis on interface $IFACE"
+	STATUS="UNDEF"
+    else     
+	OLDSEC=`cat $DATADIR/stat.networkbandwidth.$IFACE | cut -d " " -f 1`
+	OLDTRAFFIC=`cat $DATADIR/stat.networkbandwidth.$IFACE | cut -d " " -f 2`
+	
+	typeset -i BWPERMONTH=$(( (TOTAL - OLDTRAFFIC) / ( NOW - OLDSEC + 1) / 414 ))
+	# / k1024 / M1024 / G1024 * h3600 * d24 * m30
+     
+	MESSAGE="Bandwidth usage on interface $IFACE ok: $BWPERMONTH  GB/month"
+	STATUS="OK"	     
+
+     	if [ $BWPERMONTH -gt $WARNTRAF ]; then 
+	    STATUS="WARN";
+	    MESSAGE="High bandwidth usage on interface $IFACE ok: $BWPERMONTH GB/month"
+	fi
+     	if [ $BWPERMONTH -gt $ALERTRAF ]; then
+	    STATUS="ALERT";
+	    MESSAGE="Excessive bandwidth usage on interface $IFACE ok: $BWPERMONTH GB/month"
+	fi
+    fi
+    echo "${DATIM};$MYGROUP;$MYNAME;net_lbandwidth_${IFACE};$STATUS;$BWPERMONTH;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp 
+    echo "$NOW $TOTAL" > $DATADIR/stat.networkbandwidth.$IFACE
+  else
+    echo "${DATIM};$MYGROUP;$MYNAME;networktraffic (general);UNDEF;0;Cannot find /proc/net/dev - cannot perform NETWORKLINUXTRAFFIC check" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+#---------------------------------------------------------
+# NetworkConnections WARN ALERT
+#---------------------------------------------------------
+function NetworkConnections () {
+    MossheLog "NetworkConnections $1 $2"
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i VALUE 
+    
+    VALUE=`netstat -s | fgrep "connections established" | cut -d "c" -f 1 | sed -e "s/ *//g"`
+    if [ $VALUE -gt $ALERT ]; then 
+    	STATUS="ALERT"
+	MESSAGE="Critically many connections : $VALUE"
+    elif [ $VALUE -gt $WARN ]; then 
+    	STATUS="WARN"
+	MESSAGE="Many connections : $VALUE"
+    else
+	STATUS="OK"; MESSAGE="Connection count ok: $VALUE"
+    fi
+    
+    echo "${DATIM};$MYGROUP;$MYNAME;NetworkConnections;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp    
+}
+
+
+
+ 
+ 
+													  
+################################################################
+###  IDS functions
+################################################################
+
+
+#---------------------------------------------------------
+# Check Log Files: name string logfile max occurrence (warn alert)
+# 	if using wildcards escape the filename-pattern with quotes when calling
+#---------------------------------------------------------
+function LogEntryCheck () {
+    MossheLog "LogEntryCheck $1 "
+     NAME="$1"
+     MATCH="$2"
+     FILE="$3"
+     typeset -i WARN="$4"
+     typeset -i ALERT="$5"
+     typeset -i OCCUR=`cat $FILE | fgrep "${MATCH}" | wc -l`
+     
+     MESSAGE="Check $FILE for '$MATCH' - $OCCUR occurrencies"
+     STATUS="OK"
+     
+     if [ $OCCUR -gt $WARN ]; then 
+        STATUS="WARN";
+	MESSAGE="Notable occurrence of '$MATCH' in $FILE: $OCCUR"
+
+	if [ $OCCUR -gt $ALERT ]; then	
+            STATUS="ALERT";
+	    MESSAGE="Excessive occurrence of '$MATCH' in $FILE: $OCCUR"
+	fi
+     fi
+     
+     echo "${DATIM};$MYGROUP;$MYNAME;$NAME;$STATUS;$OCCUR;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# CheckFileChanges  KNOWNFILE  CHECKEDFILE:  are these the same?
+#---------------------------------------------------------
+function CheckFileChanges () {
+    MossheLog "CheckFileChanges $1"
+    KNOWNSHORT="$1"
+    KNOWNF="$DATADIR/CompareFiles/$KNOWNSHORT"
+    ORIGF="$2"
+    CTEMP=`mktemp`
+ 
+    if [ ! -f $ORIGFF ]; then
+    	MESSAGE="Original file $ORIGF does not exist"
+	STATUS="ALERT"
+	CODE=4
+    elif [ ! -f $KNOWNF ]; then
+	MESSAGE="Comparison file $KNOWNF does not exist - please generate"
+	STATUS="UNDEF"
+	CODE=3
+    else
+	diff $KNOWNF $ORIGF > $CTEMP
+	if [ -s $CTEMP ]; then
+            CODE=1
+	    MESSAGE="File $ORIGF has changed: "
+	    while read A; do
+            	MESSAGE="$MESSAGE  $A"
+	    done < $CTEMP  
+	    STATUS="WARN"     	
+	else
+	    MESSAGE="File $ORIGF stays unchanged"
+	    CODE=0
+	    STATUS="OK"     	
+      	fi
+	rm $CTEMP
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;filechange_${KNOWNSHORT};$STATUS;$CODE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
+# CheckConfigChanges  KNOWNFILE  "COMMAND+PARAM":  are these the same?
+#---------------------------------------------------------
+function CheckConfigChanges () {
+    MossheLog "CheckConfigChanges $1"
+    KNOWNSHORT="$1"    
+    KNOWNF="$DATADIR/CompareFiles/$KNOWNSHORT"
+    CMD="$2"
+    CMDOUT="$TEMPDIR/tmp.$$.chkconfchanges"
+    CTEMP=`mktemp`
+ 
+    if [ ! -f $KNOWNF ]; then
+	MESSAGE="Comparison file $KNOWNF does not exist - please generate"
+	STATUS="UNDEF"
+	CODE=3
+    else
+    	$CMD | sort > $CMDOUT
+	diff $KNOWNF $CMDOUT > $CTEMP
+     fi
+     if [ -s $CTEMP ]; then
+	MESSAGE="Configuration $CMD has changed: "
+     	while read A; do
+            MESSAGE="$MESSAGE  <br>$A"
+	done < $CTEMP  
+	STATUS="WARN"     	
+     else
+	MESSAGE="Configuration of  '$CMD'  stays unchanged"
+	STATUS="OK"     	
+     fi
+     rm $CTEMP
+     echo "${DATIM};$MYGROUP;$MYNAME;confchange_${KNOWNSHORT};$STATUS;$CODE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+     rm -f $CMDOUT
+}
+
+#############################################################################
+#############################################################################

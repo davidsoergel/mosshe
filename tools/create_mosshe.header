@@ -1,0 +1,45 @@
+#!/bin/sh
+
+# set -x 
+
+#=========================================================
+#=========================================================
+# our configuration
+#=========================================================
+#=========================================================
+
+# MYNAME=allka.wyae.de
+MYNAME=$(/bin/hostname)
+MYDOM=$(/bin/hostname -d)
+MYGROUP=Server	# Leave unset to lookup via DNS TXT
+
+WEBURL="http://localhost/mosshe/groups.html"
+WWWDIR=/var/www/mosshe
+DATADIR=/usr/local/lib/mosshe
+TEMPDIR=/tmp
+
+NETWAIT=5	# seconds timeout for network service check
+
+
+#=========================================================
+# Startup
+#=========================================================
+. $DATADIR/functions.mosshe
+
+MossheSelfCheck root@localhost	# send alert to - if MoSShE has a problem
+
+
+
+#=========================================================
+# initialize checks
+#=========================================================
+. $DATADIR/functions.localchecks
+. $DATADIR/functions.netchecks
+
+
+#=========================================================
+# targets follow
+#=========================================================
+
+
+

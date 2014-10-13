@@ -1,0 +1,71 @@
+
+
+
+#=========================================================
+# Import agent data from other servers
+#=========================================================
+
+# ImportAgent http://www.test.test/mosshe/index.csv
+
+# ImportAgent http://username:password@example.com/mosshe/index.csv
+
+
+
+#=========================================================
+# Finalize and send alert if necessary
+#=========================================================
+FinalizeLog 1	# always needed (provide a true value to rm -f $WWWDIR/*.html
+
+SortGroups	# optional group-list & per-group-listing
+
+SortServers	# yes, we want e per-server listing (optional)
+
+# RRD processing of logs - without graphs, just plain data
+#ProcessRRD
+
+
+#---------------------------------------------
+# send alerts
+
+AlertMailOnChange root@localhost	# send alert to - if status changes
+
+# AlertMailAlways root@example.test		# send alert to - repeated, if status not OK
+
+# send alert if status changes for the system given (here: www.example.com)
+# AlertMailOnChangeFor www.example.com admin@example.com "Ticket 123456: server outages"
+
+SyslogOnChange local0				# syslog changes to syslog with FACILITY (default: local0)
+
+
+
+#---------------------------------------------
+# do logging
+
+# LogTo /var/log/mosshe/mosshe.log	# continuously log to filename
+# LogToDaily /var/log/mosshe/mosshe_log	# continuously log to filename, date is appended automatically
+# LogToMonthly /var/log/mosshe/mosshe_log	# continuously log to filename, month is appended automatically
+
+LogToWeekly /var/log/mosshe/mosshe_log	# continuously log to filename, week is appended automatically
+
+
+
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2003- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+

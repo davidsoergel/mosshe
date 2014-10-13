@@ -1,0 +1,850 @@
+#!/bin/bash
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# 	function library - please call with external script
+#
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2009- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+
+
+MOSSHEVERSION="14.9.19"
+
+#---------------------------------------------------------
+# init library and files
+#---------------------------------------------------------
+
+HTMLALERT="#ff0000"
+HTMLWARN="#ffff00"
+HTMLUNDEF="#5555ff"
+HTMLINFO="#ffffff"
+HTMLOK="#55ff55"
+
+DATUM=`date +%Y-%m-%d`
+ZEIT=`date +%H:%M:%S`
+DATIM="${DATUM};${ZEIT}"
+
+MOSSHELOG=`date +"${TEMPDIR}/mosshelog_%Y-%m-%d_%Hh%M"`
+
+
+# Lookup a Group short name via DNS TXT if no MYGROUP supplied
+# Currently only djbdns's dnstxt supported
+if [ -z "$MYGROUP" ]; then
+    LEVELS=$(echo "$MYDOM" | grep -o '\.' | wc -l)
+    LEVELS=$(( LEVELS - 1 ))
+    for ((i=1; i<=$LEVELS; i++)); do
+        MYGROUP=$([ `which dnstxt` ] && dnstxt mygroup.$(echo $MYDOM | cut -d. -f $i-))
+        [ "$MYGROUP" ] && break
+    done
+fi
+MYGROUP=${MYGROUP:-$MYDOM}
+
+#############################################################################
+### 	MoSShE internal functions
+#############################################################################
+
+function MossheLog () {
+   date +"%Y-%m-%d %H:%M:%S - $1 " >> $MOSSHELOG
+}
+
+
+#---------------------------------------------------------
+# Self-Check & Self-Locking - email to admin if in distress
+#---------------------------------------------------------
+
+function MossheSelfCheck () {
+    MossheLog "MossheSelfCheck"
+    if [ -z `which mail` ]; then
+    	echo "MoSShE: 'mail' command not availabe, cannot send alerts!"
+	logger -t MoSShE -p local0.alert "MoSShE: 'mail' command not availabe, cannot send alerts!"
+    	exit 255
+    fi
+
+    if [ -f $TEMPDIR/mosshe_lock.5 ]; then
+    	date | mail -s "$MYGROUP: $MYNAME - MoSShE in deadlock" $1
+	rm -f $TEMPDIR/mosshe_lock.*
+	killall mosshe
+    fi
+
+    if [ -f $TEMPDIR/mosshe_lock.4 ]; then date > $TEMPDIR/mosshe_lock.5; 
+    elif [ -f $TEMPDIR/mosshe_lock.3 ]; then date > $TEMPDIR/mosshe_lock.4;
+    elif [ -f $TEMPDIR/mosshe_lock.2 ]; then date > $TEMPDIR/mosshe_lock.3;
+    elif [ -f $TEMPDIR/mosshe_lock.1 ]; then date > $TEMPDIR/mosshe_lock.2;
+    elif [ -f $TEMPDIR/mosshe_lock.0 ]; then date > $TEMPDIR/mosshe_lock.1
+    fi
+
+    LOCKSEXIST=`ls $TEMPDIR/mosshe_lock.? 2>/dev/null`
+    if [ -n "$LOCKSEXIST" ]; then
+        echo "MossheSelfCheck failed: MoSShE locked.  "
+	echo "Self-terminating.  Fix with rm -f $TEMPDIR/mosshe_lock.?" 
+	echo " "
+	echo " "
+	cat ${TEMPDIR}/mosshelog_*
+	date +"%Y-%m-%d %H:%M:%S - another MoSShE started and ran into lock"
+        rm -f ${MOSSHELOG}
+    	kill "$$"
+    fi
+    rm -f ${TEMPDIR}/mosshelog_*
+    MossheLog "MossheSelfCheck - successfully established lock"    
+    date > $TEMPDIR/mosshe_lock.0
+    
+#    rm "$WWWDIR/srv_$MYNAME.txt"
+}
+
+
+#---------------------------------------------------------
+# FinalizeLog - finalize, cleanup, HTMLize - any parameter to remove HTMLs first
+#---------------------------------------------------------
+function FinalizeLog () {
+    MossheLog "FinalizeLog $1"
+
+    [ "$1" -a "$WWWDIR" ] && rm -f $WWWDIR/*.html
+
+    if [ ! -f $WWWDIR/plotdata/dygraph-combined.js ]; then
+    	MossheLog "MossheFinalizeLog - graphing routines missing in $WWWDIR/plotdata/"
+    fi
+
+    typeset -i OKCOUNT FAILCOUNT
+    OKCOUNT=0
+    FAILCOUNT=0
+    
+    if [ -f $TEMPDIR/mosshe_collected.newstatus ]; then
+        mv $TEMPDIR/mosshe_collected.newstatus $TEMPDIR/mosshe_collected.oldstatus
+    else
+        echo "MoSShE probably was restarted? Could not find $TEMPDIR/mosshe_collected.newstatus ..."
+    fi
+    
+    cat $DATADIR/template_head.html \
+    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	| tee $TEMPDIR/mosshe_collected.html \
+	> $TEMPDIR/mosshe_nonokcollected.html
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
+	| tee -a $TEMPDIR/mosshe_collected.html \
+	>> $TEMPDIR/mosshe_nonokcollected.html
+    EPOCH=`date +%s`
+    rm -f $TEMPDIR/mosshe_nagiosresults.$$.tmp
+    
+    LASTLINEHEAD=;
+    while read LINE; do
+	DAT=`echo $LINE | cut -d ";" -f 1`
+	TIM=`echo $LINE | cut -d ";" -f 2`
+	GROUP=`echo $LINE | cut -d ";" -f 3`
+	ME=`echo $LINE | cut -d ";" -f 4`
+	SVC=`echo $LINE | cut -d ";" -f 5`
+	STAT=`echo $LINE | cut -d ";" -f 6`
+	VALUE=`echo $LINE | cut -d ";" -f 7`
+	MSG=`echo $LINE | cut -d ";" -f 8`
+	if [ "$STAT" = "ALERT" ]; then
+	    COLR=$HTMLALERT
+	    STATNUM=2
+	elif [ "$STAT" = "WARN" ]; then
+	    COLR=$HTMLWARN
+	    STATNUM=1
+	elif [ "$STAT" = "INFO" ]; then
+	    COLR=$HTMLINFO
+	    STATNUM=0
+	elif [ "$STAT" = "OK" ]; then
+	    COLR=$HTMLOK
+	    STATNUM=0
+	else
+	    COLR=$HTMLUNDEF
+	    STATNUM=3
+	fi
+
+	THISLINEHEAD="$COLR ${DAT} $GROUP $ME"
+	if [ "$THISLINEHEAD" = "$LASTLINEHEAD" ]; then
+	    LINEHEADPROPOSAL="<tr class=\"datarow\"><td></td><td></td><td></td>"
+	else    
+	    LINEHEADPROPOSAL="<tr height="2"><td colspan="7"></td></tr><tr class=\"datarow\"><td bgcolor=\"$COLR\" class=\"border\">${DAT} ${TIM}</td><td bgcolor=\"$COLR\" class=\"border\"><a href=\"$GROUP.html\">$GROUP</a></td><td bgcolor=\"$COLR\" class=\"border\"><a href=\"srv_$ME.html\">$ME</a></td>"
+	    LASTLINEHEAD=$THISLINEHEAD
+	fi
+	LINEHEAD="<!-- | GROUP=$GROUP | SERVER=$ME | -->$LINEHEADPROPOSAL"
+	
+	CHK=`echo $SVC | sed -e "s/\//\./g"`
+	FN="$ME/$CHK"
+	echo "$LINEHEAD<td bgcolor=\"$COLR\" class=\"border\"><a href=\"/mosshe/plotdata/?$FN\">$SVC</a> <a href=\"/mosshe/plotdata/?$FN.avg\">(l)</a></td><td bgcolor=\"$COLR\" class=\"border\">$STAT</td><td bgcolor=\"$COLR\" class=\"border\">$VALUE</td><td bgcolor=\"$COLR\" class=\"border\">$MSG</td></tr>" >> $TEMPDIR/mosshe_collected.html
+	
+	if [ "$STAT" = "OK" ]; then
+	    OKCOUNT=$(( OKCOUNT + 1 ))
+	elif [ "$STAT" != "INFO" ]; then
+	     echo "$LINEHEAD<td bgcolor=\"$COLR\" class=\"border\"><a href=\"/mosshe/plotdata/?$FN\">$SVC</a> <a href=\"/mosshe/plotdata/?$FN.avg\">(l)</a></td><td bgcolor=\"$COLR\" class=\"border\">$STAT</td><td bgcolor=\"$COLR\" class=\"border\">$VALUE</td><td bgcolor=\"$COLR\" class=\"border\">$MSG</td></tr>" >> $TEMPDIR/mosshe_nonokcollected.html
+	    FAILCOUNT=$(( FAILCOUNT + 1 ))
+	fi
+
+	echo "$GROUP - $ME - $STAT - $SVC" >> $TEMPDIR/mosshe_collected.newstatus
+	echo "${EPOCH};${GROUP};${ME};${SVC};${STATNUM};${MSG}" >> $TEMPDIR/mosshe_nagiosresults.$$.tmp
+    done < "$TEMPDIR/tmp.$$.collected.tmp"
+    
+    echo '<tr height="2"><td colspan="7"></td></tr><tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
+	| tee -a $TEMPDIR/mosshe_collected.html \
+	>> $TEMPDIR/mosshe_nonokcollected.html
+    
+    cat $DATADIR/template_foot.html \
+    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	| sed -e "s/OKCOUNT/$OKCOUNT/g" \
+	| sed -e "s/FAILCOUNT/$FAILCOUNT/g" \
+	| tee -a $TEMPDIR/mosshe_collected.html \
+	>> $TEMPDIR/mosshe_nonokcollected.html
+	
+    mv $TEMPDIR/mosshe_collected.html $WWWDIR/index.html
+    mv $TEMPDIR/mosshe_nonokcollected.html $WWWDIR/notok.html
+    mv $TEMPDIR/tmp.$$.collected.tmp $WWWDIR/index.csv
+    mv $TEMPDIR/mosshe_nagiosresults.$$.tmp $WWWDIR/nagios.csv
+    if [ -f $TEMPDIR/mosshe_collected.oldstatus ]; then
+        diff $TEMPDIR/mosshe_collected.oldstatus $TEMPDIR/mosshe_collected.newstatus | fgrep -v " - OK - " | fgrep " - " > $TEMPDIR/mosshe_collected.diff
+    else
+        echo "MoSShE probably was restarted? Could not find $TEMPDIR/mosshe_collected.oldstatus ..."
+    fi
+    
+    rm -f $TEMPDIR/mosshe_lock.*
+
+    for F in $WWWDIR/srv_*.txt.new; do
+	OLDF=`echo $F | sed -e "s/.txt.new/.txt/g"`
+	rm "$OLDF"
+	mv "$F" "$OLDF"
+    done
+    
+    export OKCOUNT FAILCOUNT
+}
+
+#---------------------------------------------------------
+# SortGroups - create per-server pages
+#---------------------------------------------------------
+function SortGroups () {
+    MossheLog "SortGroups $1"
+    cat $DATADIR/template_head.html \
+    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	> $TEMPDIR/groupcollected.html
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
+	>> $TEMPDIR/groupcollected.html
+	
+    cat $DATADIR/template_head.html \
+    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	    > $TEMPDIR/mosshe.$$.grouphead.tmp
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
+	>> $TEMPDIR/mosshe.$$.grouphead.tmp
+
+    cat $DATADIR/template_foot.html \
+    	| fgrep -v "Totals: <div class=\"ok\">OKCOUNT checks are OK</div> - <div class=\"notok\">FAILCOUNT show problems</div>" \
+	>> $TEMPDIR/mosshe_foot.$$.tmp
+
+    cat $WWWDIR/index.csv  | cut -d ";" -f 3 | sort -u > $TEMPDIR/mosshe_grouplist.$$.tmp
+    LASTGROUP=
+    LASTSERVER=
+    while read GROUPSERVER; do
+        set `IFS=";"; echo $GROUPSERVER`
+        GROUP=$1
+        SERVER=$2
+        if [ "$GROUP" = "$LASTGROUP" ]; then
+	    GROUP=
+            [ "$SERVER" = "$LASTSERVER" ] && SERVER=
+	fi
+        if [ "$GROUP" -o "$SERVER" ]; then
+	    echo -n "<tr><td class=\"border\"><a href=\"${GROUP}.html\">${GROUP}</a></td></td>" >> $TEMPDIR/groupcollected.html
+	else
+	    echo -n "<tr><td></td><td></td>" >> $TEMPDIR/groupcollected.html
+	fi
+	for STATUS in ALERT WARN OK UNDEF; do
+	    COUNT=`fgrep ";$STATUS;" $WWWDIR/index.csv | fgrep ";${GROUP};" | wc -l`
+	    if [ "$STATUS" = "ALERT" ]; then
+		COLR=$HTMLALERT
+	    elif [ "$STATUS" = "WARN" ]; then
+	    	COLR=$HTMLWARN
+	    elif [ "$STATUS" = "OK" ]; then
+	    	COLR=$HTMLOK
+	    else
+	    	COLR=$HTMLUNDEF
+	    fi
+	    if [ "$COUNT" = "0" ]; then
+	    	COLR="#ffffff"
+	    fi
+	    echo -n "<td bgcolor=\"$COLR\" align=\"middle\" class=\"border\">$COUNT</td>" >> $TEMPDIR/groupcollected.html
+	done
+	echo '</tr>' >> $TEMPDIR/groupcollected.html
+	
+	cp $TEMPDIR/mosshe.$$.grouphead.tmp $TEMPDIR/mosshe.$$.group.tmp
+	fgrep "| GROUP=$GROUP |" $WWWDIR/index.html >> $TEMPDIR/mosshe.$$.group.tmp	
+	cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/mosshe.$$.group.tmp
+	mv $TEMPDIR/mosshe.$$.group.tmp "$WWWDIR/$GROUP.html"
+	
+        [ "$GROUP" ] && LASTGROUP=$GROUP   
+        [ "$SERVER" ] && LASTSERVER=$SERVER
+    done < $TEMPDIR/mosshe_grouplist.$$.tmp
+    
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
+	>> $TEMPDIR/groupcollected.html
+    cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/groupcollected.html
+    mv $TEMPDIR/groupcollected.html $WWWDIR/groups.html
+    
+    rm $TEMPDIR/mosshe_grouplist.$$.tmp $TEMPDIR/mosshe_foot.$$.tmp $TEMPDIR/mosshe.$$.grouphead.tmp
+
+
+    #---------------------------------------------------------
+    # SortGroupsExpanded - create per-server pages
+    #---------------------------------------------------------
+    cat $DATADIR/template_head.html \
+    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	> $TEMPDIR/servercollected.html
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
+	>> $TEMPDIR/servercollected.html
+	
+    cat $DATADIR/template_head.html \
+    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	    > $TEMPDIR/mosshe.$$.serverhead.tmp
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
+	>> $TEMPDIR/mosshe.$$.serverhead.tmp
+
+    cat $DATADIR/template_foot.html \
+    	| fgrep -v "Totals: <div class=\"ok\">OKCOUNT checks are OK</div> - <div class=\"notok\">FAILCOUNT show problems</div>" \
+	>> $TEMPDIR/mosshe_foot.$$.tmp
+
+    cat $WWWDIR/index.csv  | cut -d ";" -f 3,4 | sort -t ";" -k 1,2 -u > $TEMPDIR/mosshe_serverlist.$$.tmp
+    LASTGROUP=
+    LASTSERVER=
+    while read GROUPSERVER; do
+        set `IFS=";"; echo $GROUPSERVER`
+        GROUP=$1
+        SERVER=$2
+        if [ "$GROUP" = "$LASTGROUP" ]; then
+	    GROUP=
+            [ "$SERVER" = "$LASTSERVER" ] && SERVER=
+	fi
+        if [ "$GROUP" -o "$SERVER" ]; then
+	    echo -n "<tr><td class=\"border\"><a href=\"${GROUP}.html\">${GROUP}</a></td><td class=\"border\"><a href=\"srv_${SERVER}.html\">$SERVER</a></td>" >> $TEMPDIR/servercollected.html
+	else
+	    echo -n "<tr><td></td><td></td>" >> $TEMPDIR/servercollected.html
+	fi
+	for STATUS in ALERT WARN OK UNDEF; do
+	    COUNT=`fgrep ";$STATUS;" $WWWDIR/index.csv | fgrep ";${GROUPSERVER};" | wc -l`
+	    if [ "$STATUS" = "ALERT" ]; then
+		COLR=$HTMLALERT
+	    elif [ "$STATUS" = "WARN" ]; then
+	    	COLR=$HTMLWARN
+	    elif [ "$STATUS" = "OK" ]; then
+	    	COLR=$HTMLOK
+	    else
+	    	COLR=$HTMLUNDEF
+	    fi
+	    if [ "$COUNT" = "0" ]; then
+	    	COLR="#ffffff"
+	    fi
+	    echo -n "<td bgcolor=\"$COLR\" align=\"middle\" class=\"border\">$COUNT</td>" >> $TEMPDIR/servercollected.html
+	done
+	echo '</tr>' >> $TEMPDIR/servercollected.html
+	
+#	cp $TEMPDIR/mosshe.$$.serverhead.tmp $TEMPDIR/mosshe.$$.server.tmp
+#	fgrep "| SERVER=$SERVER |" $WWWDIR/index.html >> $TEMPDIR/mosshe.$$.server.tmp	
+#	cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/mosshe.$$.server.tmp
+#	mv $TEMPDIR/mosshe.$$.server.tmp "$WWWDIR/$1-$SERVER.html"
+	
+        [ "$GROUP" ] && LASTGROUP=$GROUP   
+        [ "$SERVER" ] && LASTSERVER=$SERVER
+    done < $TEMPDIR/mosshe_serverlist.$$.tmp
+    
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Group</b></td><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
+	>> $TEMPDIR/servercollected.html
+    cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/servercollected.html
+    mv $TEMPDIR/servercollected.html $WWWDIR/groupsexpanded.html
+    
+    rm $TEMPDIR/mosshe_serverlist.$$.tmp $TEMPDIR/mosshe_foot.$$.tmp $TEMPDIR/mosshe.$$.serverhead.tmp
+}
+
+
+#---------------------------------------------------------
+# SortServers - create per-server pages
+#---------------------------------------------------------
+function SortServers () {
+    MossheLog "SortServers $1"
+    cat $DATADIR/template_head.html \
+    	| sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	> $TEMPDIR/servercollected.html
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr>' \
+	>> $TEMPDIR/servercollected.html
+	
+    cat $DATADIR/template_head.html \
+    	    | sed -e "s/TIMESTAMP/$DATUM - $ZEIT/g" \
+	    > $TEMPDIR/mosshe.$$.serverhead.tmp
+    echo '<tr bgcolor="#dddddd"><td><b>Timestamp</b></td><td><b>Group</b></td><td><b>System</b></td><td><b>Property</b></td><td><b>Status</b></td><td><b>Value</b></td><td><b>Detail</b></td></tr>' \
+	>> $TEMPDIR/mosshe.$$.serverhead.tmp
+
+    cat $DATADIR/template_foot.html \
+    	| fgrep -v "Totals: <div class=\"ok\">OKCOUNT checks are OK</div> - <div class=\"notok\">FAILCOUNT show problems</div>" \
+	>> $TEMPDIR/mosshe_foot.$$.tmp
+
+    cat $WWWDIR/index.csv  | cut -d ";" -f 4 | sort -u > $TEMPDIR/mosshe_serverlist.$$.tmp
+    while read SERVER; do
+	echo -n "<tr><td class=\"border\"><a href=\"srv_${SERVER}.html\">$SERVER</a></td>" >> $TEMPDIR/servercollected.html
+	for STATUS in ALERT WARN OK UNDEF; do
+	    COUNT=`fgrep ";$STATUS;" $WWWDIR/index.csv | fgrep ";${SERVER};" | wc -l`
+	    if [ "$STATUS" = "ALERT" ]; then
+		COLR=$HTMLALERT
+	    elif [ "$STATUS" = "WARN" ]; then
+	    	COLR=$HTMLWARN
+	    elif [ "$STATUS" = "OK" ]; then
+	    	COLR=$HTMLOK
+	    else
+	    	COLR=$HTMLUNDEF
+	    fi
+	    if [ "$COUNT" = "0" ]; then
+	    	COLR="#ffffff"
+	    fi
+	    echo -n "<td bgcolor=\"$COLR\" align=\"middle\" class=\"border\">$COUNT</td>" >> $TEMPDIR/servercollected.html
+	done
+	echo '</tr>' >> $TEMPDIR/servercollected.html
+	
+	cp $TEMPDIR/mosshe.$$.serverhead.tmp $TEMPDIR/mosshe.$$.server.tmp
+	fgrep "| SERVER=$SERVER |" $WWWDIR/index.html >> $TEMPDIR/mosshe.$$.server.tmp
+	if [ -f "$WWWDIR/srv_$SERVER.txt" ]; then 
+	    echo "</table><p>" >> $TEMPDIR/mosshe.$$.server.tmp
+	    cat "$WWWDIR/srv_$SERVER.txt" >> $TEMPDIR/mosshe.$$.server.tmp
+	fi
+	cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/mosshe.$$.server.tmp 
+	mv $TEMPDIR/mosshe.$$.server.tmp "$WWWDIR/srv_$SERVER.html"
+	
+    done < $TEMPDIR/mosshe_serverlist.$$.tmp
+    
+    echo '<tr bgcolor="#dddddd" class="border datarowhead"><td><b>Server</b></td><td><b>Alert</b></td><td><b>Warn</b></td><td><b>Ok</b></td><td><b>Undef</b></td></tr><p>'  >> $TEMPDIR/servercollected.html
+    cat $TEMPDIR/mosshe_foot.$$.tmp >> $TEMPDIR/servercollected.html
+    mv $TEMPDIR/servercollected.html $WWWDIR/servers.html
+    
+    rm $TEMPDIR/mosshe_serverlist.$$.tmp $TEMPDIR/mosshe_foot.$$.tmp $TEMPDIR/mosshe.$$.serverhead.tmp
+}
+
+
+
+
+#############################################################################
+### 	Central Server Functions  /  ImportAgent + PassiveCheck
+#############################################################################
+
+
+
+#---------------------------------------------------------
+# ImportAgentCurl URL  -  inport and merge results from other agents
+#---------------------------------------------------------
+function ImportAgentCurl () {
+    MossheLog "ImportAgentCurl $1"
+	URL=$1
+	IMSV=`echo "$URL" | cut -d "/" -f 3 | cut -d ':' -f 1`
+        if [ -z `which curl` ]; then
+	    echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentCurl_$IMSV;UNDEF;-1;cURL not installed - cannot perform AgentImport"  >> $TEMPDIR/tmp.$$.collected.tmp
+        else
+	    curl --connect-timeout=$NETWAIT $URL >> $TEMPDIR/tmp.$$.collected.tmp
+	    if [ $? -gt 0 ]; then
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentCurl_$IMSV;ALERT;1;could not download $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    else
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentCurl_$IMSV;OK;0;imported $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    fi
+        fi
+}
+
+
+#---------------------------------------------------------
+# ImportAgentWget URL  -  inport and merge results from other agents
+#---------------------------------------------------------
+function ImportAgentWget () {
+    MossheLog "ImportAgentWget $1"
+	URL=$1
+	IMSV=`echo "$URL" | cut -d "/" -f 3 | cut -d ':' -f 1`
+        if [ -z `which wget` ]; then
+	    echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentWget_$IMSV;UNDEF;-1;cURL not installed - cannot perform AgentImport"  >> $TEMPDIR/tmp.$$.collected.tmp
+        else
+	    wget --quiet --timeout=$NETWAIT --tries=2 --output-document=- $URL >> $TEMPDIR/tmp.$$.collected.tmp
+	    if [ $? -gt 0 ]; then
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentWget_$IMSV;ALERT;1;could not download $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    else
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgentWget_$IMSV;OK;0;imported $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    fi
+        fi
+}
+
+
+#---------------------------------------------------------
+# ImportAgent URL  -  inport and merge results from other agents
+#---------------------------------------------------------
+function ImportAgent () {
+    MossheLog "ImportAgent $1"
+    URL=$1
+    IMSV=`echo "$URL" | cut -d "/" -f 3 | cut -d ':' -f 1`
+    if [ -z `which lynx` ]; then
+    	echo "${DATIM};$MYGROUP;$MYNAME;ImportAgent_$IMSV;UNDEF;-1;LYNX not installed - cannot perform AgentImport"  >> $TEMPDIR/tmp.$$.collected.tmp
+    else
+    	lynx -connect_timeout=$NETWAIT -width=1023 -dump $URL >> $TEMPDIR/tmp.$$.collected.tmp
+        if [ $? -gt 0 ]; then
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgent_$IMSV;ALERT;1;could not download $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    else
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportAgent_$IMSV;OK;0;imported $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+        fi
+    fi
+}
+
+
+#---------------------------------------------------------
+# ImportAgentServerInfo URL  -  inport and merge results from other agents
+#---------------------------------------------------------
+function ImportServerInfo () {
+    MossheLog "ImportServerInfo $1"
+	URL=$1
+	IMSV=`echo "$URL" | cut -d "/" -f 3 | cut -d ':' -f 1`
+        if [ -z `which wget` ]; then
+	    echo "${DATIM};$MYGROUP;$MYNAME;ImportServerInfo_$IMSV;UNDEF;-1;cURL not installed - cannot perform ImportServerInfo"  >> $TEMPDIR/tmp.$$.collected.tmp
+        else
+#	    cd $WWWDIR
+	    wget -nc --quiet --timeout=$NETWAIT --tries=2 --directory-prefix=$WWWDIR $URL
+	    if [ $? -gt 0 ]; then
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportServerInfo_$IMSV;ALERT;1;could not download $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    else
+		echo "${DATIM};$MYGROUP;$MYNAME;ImportServerInfo_$IMSV;OK;0;imported $1"  >> $TEMPDIR/tmp.$$.collected.tmp
+	    fi
+        fi
+}
+
+
+#---------------------------------------------------------
+# ReapPassiveChecks  servername  minutes.timeout  filename  -  inport and merge income results from other agents
+#---------------------------------------------------------
+function ReapPassiveChecks () {
+    MossheLog "ReapPassiveChecks $1"
+    SRVNAME=$1
+    MAXAGE=$2
+    FILENAME=$3
+
+    STATUS="UNDEF"
+    MESSAGE="Something wrong with passive check for $SRVNAME file $FILENAME"
+    VALUE=0
+    
+    if [ ! -s "$FILENAME" ]; then
+    	STATUS="ALERT"
+	MESSAGE="Error: Check file $FILENAME for $SRVNAME not existing "
+	VALUE=3
+    else
+    	typeset -i FTIME=`ls -l --time-style=+%s $FILENAME | cut -d " " -f 6`
+    	typeset -i LTIME=`date +%s --date="$MAXAGE minutes ago"`
+    	if [ $FTIME -lt $LTIME ]; then 
+    	    STATUS="WARN"
+	    MESSAGE="Problem: check file $FILENAME for $SRVNAME older than $MAXAGE minutes "
+	    VALUE=2
+	else
+    	    STATUS="OK"
+	    MESSAGE="Passive-check file $FILENAME for $SRVNAME seems to be current"
+	    VALUE=1
+	    cat "$FILENAME"  >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+    fi
+
+    echo "${DATIM};$MYGROUP;$SRVNAME;reappassive_$SRVNAME;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+
+
+#############################################################################
+### 	Alerting
+#############################################################################
+
+
+#---------------------------------------------------------
+# AlertMailOnChange  mailaddress
+#---------------------------------------------------------
+function AlertMailOnChange () {
+MossheLog "AlertMailOnChange $1"
+MAILTO=$1;
+if [ -s $TEMPDIR/mosshe_collected.diff ]; then
+    echo "$WEBURL/notok.html " > $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo "Status Change  <old  >new" >> $TEMPDIR/MAIL.$$
+    echo "-------------------------" >> $TEMPDIR/MAIL.$$
+    cat $TEMPDIR/mosshe_collected.diff >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    echo "Non-OK Status (Overview)" >> $TEMPDIR/MAIL.$$
+    echo "------------------------" >> $TEMPDIR/MAIL.$$
+    fgrep -v " - OK - " $TEMPDIR/mosshe_collected.newstatus >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    echo "Non-OK Status (Detail)" >> $TEMPDIR/MAIL.$$
+    echo "----------------------" >> $TEMPDIR/MAIL.$$
+    fgrep -v ";OK;" $WWWDIR/index.csv >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    cat $TEMPDIR/MAIL.$$ | mail -s "MoSShE $MYGROUP: $MYNAME : Status change detected" $MAILTO
+    rm $TEMPDIR/MAIL.$$
+fi
+}
+
+
+#---------------------------------------------------------
+# AlertMailOnChangeFor servername  mailaddress  subject
+#---------------------------------------------------------
+function AlertMailOnChangeFor () {
+MossheLog "AlertMailOnChangeFor srv=$1 to=$2 msg=$3"
+SERVER=$1
+MAILTO=$2
+SUBJECT=$3
+if [ -z "$SUBJECT" ]; then SUBJECT="Monitoring $SERVER : Status change on $MYGROUP: $MYNAME"; fi
+fgrep "$SERVER" $TEMPDIR/mosshe_collected.diff > $TEMPDIR/collected_filter.$$.diff
+if [ -s $TEMPDIR/collected_filter.$$.diff ]; then
+    echo "http://$WEBURL/notok.html " > $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo "Status Change  <old  >new" >> $TEMPDIR/MAIL.$$
+    echo "-------------------------" >> $TEMPDIR/MAIL.$$
+    cat $TEMPDIR/collected_filter.$$.diff >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    echo "Non-OK Status (Overview)" >> $TEMPDIR/MAIL.$$
+    echo "------------------------" >> $TEMPDIR/MAIL.$$
+    fgrep -v " - OK - " $TEMPDIR/mosshe_collected.newstatus | fgrep "$SERVER" >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    echo "Non-OK Status (Detail)" >> $TEMPDIR/MAIL.$$
+    echo "----------------------" >> $TEMPDIR/MAIL.$$
+    fgrep -v ";OK;" $WWWDIR/index.csv | fgrep "$SERVER" >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    cat $TEMPDIR/MAIL.$$ | mail -s "$SUBJECT" $MAILTO
+    rm $TEMPDIR/MAIL.$$
+fi
+rm $TEMPDIR/collected_filter.$$.diff
+}
+
+
+#---------------------------------------------------------
+# AlertMailAlways  mailaddress
+#---------------------------------------------------------
+function AlertMailAlways () {
+MossheLog "AlertMailAlways $1"
+MAILTO=$1;
+fgrep -v " - OK - " $TEMPDIR/mosshe_collected.newstatus > $TEMPDIR/tmp.$$.collected.newstatus.nonOK
+if [ -s $TEMPDIR/tmp.$$.collected.newstatus.nonOK ]; then
+    echo "http://$WEBURL/notok.html " > $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo "MoSSHe Alert/Warning on $MYGROUP: $MYNAME" >> $TEMPDIR/MAIL.$$
+    echo "---------------------------------------" >> $TEMPDIR/MAIL.$$
+
+    cat $TEMPDIR/tmp.$$.collected.newstatus.nonOK >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+    echo " " >> $TEMPDIR/MAIL.$$
+
+    cat $TEMPDIR/MAIL.$$ | mail -s "MoSSHe monitoring: Alert/Warning for $MYGROUP: $MYNAME" $MAILTO
+    rm $TEMPDIR/MAIL.$$
+fi
+rm $TEMPDIR/tmp.$$.collected.newstatus.nonOK
+}
+
+
+#---------------------------------------------------------
+# SyslogOnChange  facility
+#---------------------------------------------------------
+function SyslogOnChange () {
+MossheLog "SyslogOnChange $1"
+FACILITY=${1-local0};
+
+if [ -s $TEMPDIR/mosshe_collected.diff ]; then
+    while read LINE; do    
+#	echo "$LINE" | read UPDOWN SERVER DUMMY1 STATUS DUMMY2 CHECK
+	UPDOWN=`echo $LINE | cut -d " " -f 1`
+	GROUP=`echo $LINE | cut -d " " -f 2`
+	SERVER=`echo $LINE | cut -d " " -f 4`
+	STATUS=`echo $LINE | cut -d " " -f 6`
+	CHECK=`echo $LINE | cut -d " " -f 8`
+	FULLTEXT=`fgrep ";${SERVER};${CHECK};" $WWWDIR/index.csv | cut -d ";" -f 9-`
+
+	if [ "$UPDOWN" = '<' ]; then
+	    logger -t MoSShE -p ${FACILITY}.info "OK - ${CHECK} @ ${GROUP}: ${SERVER} - ${FULLTEXT}"
+	elif [ "$STATUS" = 'INFO' ]; then
+	    logger -t MoSShE -p ${FACILITY}.info "${STATUS} - ${CHECK} @ ${GROUP}: ${SERVER} info message"
+	elif [ "$STATUS" = 'WARN' ]; then
+	    logger -t MoSShE -p ${FACILITY}.warn "${STATUS} - ${CHECK} @ ${GROUP}: ${SERVER} is not okay - ${FULLTEXT}"
+	elif [ "$STATUS" = 'ALERT' ]; then
+	    logger -t MoSShE -p ${FACILITY}.alert "${STATUS} - ${CHECK} @ ${GROUP}: ${SERVER} is broken/critical - ${FULLTEXT}"
+	else
+	    logger -t MoSShE -p ${FACILITY}.err "${STATUS} - ${CHECK} @ ${GROUP}: ${SERVER} check is not working - ${FULLTEXT}"
+	fi
+    done < $TEMPDIR/mosshe_collected.diff
+fi
+}
+
+
+#############################################################################
+### 	Logging
+#############################################################################
+
+
+#---------------------------------------------------------
+# LogTo filename
+#---------------------------------------------------------
+function LogTo () {
+    MossheLog "LogTo $1"
+    LOGFILENAME=$1;
+    mkdir -p `dirname $LOGFILENAME` 
+    cat $WWWDIR/index.csv >> $LOGFILENAME
+}
+
+
+#---------------------------------------------------------
+# LogToDaily filename
+#---------------------------------------------------------
+function LogToDaily () {
+    MossheLog "LogToDaily $1"
+    LOGFILENAME=$1;
+    mkdir -p `dirname $LOGFILENAME` 
+    cat $WWWDIR/index.csv >> $LOGFILENAME.$DATUM
+}
+
+
+#---------------------------------------------------------
+# LogToWeekly filename
+#---------------------------------------------------------
+function LogToWeekly () {
+    MossheLog "LogToWeekly $1"
+    LOGFILENAME=$1;
+    mkdir -p `dirname $LOGFILENAME` 
+    cat $WWWDIR/index.csv >> $LOGFILENAME.`date +"%Ykw%W"`
+}
+
+
+#---------------------------------------------------------
+# LogToMonthly filename
+#---------------------------------------------------------
+function LogToMonthly () {
+    MossheLog "LogToMonthly $1"
+    LOGFILENAME=$1;
+    mkdir -p `dirname $LOGFILENAME` 
+    cat $WWWDIR/index.csv >> $LOGFILENAME.`date +"%Y-%m"`
+}
+
+
+#---------------------------------------------------------
+# SLA_Eval servername checkname
+#---------------------------------------------------------
+function SLA_Eval () {
+    MossheLog "SLA_Eval srv=$1 chk=$2"
+    SRV=$1;
+    CHK=$2;
+    cat $TEMPDIR/mosshe_collected.diff | fgrep $SRV | fgrep $CHK \
+    	| while read LINE; do
+	    UPDOWN=`echo $LINE | cut -d " " -f 1`
+	    SERVER=`echo $LINE | cut -d " " -f 2`
+	    CHECK=`echo $LINE | cut -d " " -f 6`
+	    if [ "$UPDOWN" = '>' ]; then
+	    	STATUS=`echo $LINE | cut -d " " -f 4`
+		echo -n "$SERVER;$CHECK;$STATUS;$DATIM;" >> $WWWDIR/SLA_${SRV}_${CHK}.txt
+	    else
+	    	echo "OK;$DATIM" >> $WWWDIR/SLA_${SRV}_${CHK}.txt
+	    fi
+	done
+}
+
+
+#---------------------------------------------------------
+# PlotDataFiles   MaxSize
+#---------------------------------------------------------
+function PlotDataFiles () {
+    MossheLog "PlotDataFiles $1"
+    MAXSIZE=$1;
+    cat $WWWDIR/index.csv \
+    	| cut -d ";" -f 1,2,4,5,7 \
+	| sed -e "s/;/ /g" \
+	| while read DAT TIM HOST CHCK VALU; do
+	    CHK=`echo $CHCK | sed -e "s/\//\./g"`
+	    FN="$WWWDIR/datalog/$HOST/$CHK"
+	    FNTMP="$TEMPDIR/_mosshe_$HOST_$CHK.tmp"
+	    mkdir -p "$WWWDIR/datalog/$HOST"
+	    cp "$FN"  "$FNTMP"
+	    echo "$DAT $TIM	$VALU" >> "$FNTMP"
+	    tail -$MAXSIZE "$FNTMP" > "$FN"
+	    rm  "$FNTMP"
+#	    WWWESC=`echo $WWWDIR | sed -e "s/\//SONMISTESCAPING/g"`
+#	    cat "$DATADIR/gnuplot.template" \
+#	    	| sed -e "s/%FILENAME%/$HOST\/$CHK/g" \
+#		| sed -e "s/%WWWDIR%/$WWWESC/g" \
+#		| sed -e "s/SONMISTESCAPING/\//g" \
+#		> "$TEMPDIR/_mosshe_gnuplot.tmp"
+#	    gnuplot "$TEMPDIR/_mosshe_gnuplot.tmp" 2>/dev/null >/dev/null
+#    	    rm "$TEMPDIR/_mosshe_gnuplot.tmp"
+	done
+}
+
+
+
+
+
+
+#---------------------------------------------------------
+# PlotAvgDataFiles   AverageNum MaxSize
+#---------------------------------------------------------
+function PlotAvgDataFiles () {
+    MossheLog "PlotAvgDataFiles $1"
+    AVGNUM=$1;
+    MAXSIZE=$2;
+    if [ -f "$TEMPDIR/_mosshe_avg_count.tmp" ]; then
+        typeset -i CURNUM=`cat "$TEMPDIR/_mosshe_avg_count.tmp"`
+	CURNUM=$(( CURNUM + 1 ))
+	if [ $CURNUM -ge $AVGNUM ]; then
+	    rm "$TEMPDIR/_mosshe_avg_count.tmp"
+	else
+	    echo "$CURNUM" > "$TEMPDIR/_mosshe_avg_count.tmp"
+	fi
+    else echo "1" > "$TEMPDIR/_mosshe_avg_count.tmp"
+        cat $WWWDIR/index.csv \
+    	  | cut -d ";" -f 1,2,4,5 \
+	  | sed -e "s/;/ /g" \
+	  | while read DAT TIM HOST CHCK; do
+	      CHK=`echo $CHCK | sed -e "s/\//\./g"`
+	      FN="$WWWDIR/datalog/$HOST/$CHK"
+	      FNTMP="$TEMPDIR/_mosshe_$HOST_$CHK.tmp"
+	      cp "$FN.avg"  "$FNTMP"
+	      AVGTMP="$TEMPDIR/_mosshe_$HOST_$CHK.avg.tmp"
+	      tail -$AVGNUM "$FN" > "$AVGTMP"
+	      typeset -i VALU=0
+	      while read D T N; do
+	          VALU=$(( VALU + N ))
+	      done < "$AVGTMP"
+	      VALU=$(( VALU / AVGNUM ))
+	      echo "$DAT $TIM	$VALU" >> "$FNTMP"
+	      tail -$MAXSIZE "$FNTMP" > "$FN.avg"
+#	      WWWESC=`echo $WWWDIR | sed -e "s/\//SONMISTESCAPING/g"`
+#	      cat "$DATADIR/gnuplot.template" \
+#	    	| sed -e "s/%FILENAME%/$HOST\/$CHK/g" \
+#		| sed -e "s/%WWWDIR%/$WWWESC/g" \
+#		| sed -e "s/SONMISTESCAPING/\//g" \
+#		> "$TEMPDIR/_mosshe_gnuplot.tmp"
+#	      gnuplot "$TEMPDIR/_mosshe_gnuplot.tmp" 2>/dev/null >/dev/null
+	      rm -f "$TEMPDIR/_mosshe_gnuplot.tmp" "$AVGTMP" "$FNTMP"
+	done
+    fi
+}
+
+
+
+
+#############################################################################
+
+#############################################################################

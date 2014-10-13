@@ -1,0 +1,183 @@
+#!/bin/sh
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# 	function library - please call with external script
+#
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2003- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+
+
+
+################################################################
+###  Linux VServer functions
+################################################################
+
+#40001   11 731.5M 140.8M   1m16s69   0m57s64   2h50m31 fraktion
+# 40002    5 141.6M   4.1M   0m07s00   0m18s14  53m49s96 crystal
+#    DF=`df -Plm | fgrep "$HD" `
+
+#---------------------------------------------------------
+# CheckVserverUp SERVERNAME - returns 
+#---------------------------------------------------------
+function CheckVserverUp () {
+  VSRV="$1"    
+  MossheLog "CheckVserverUp $VSRV"
+  if ! [ -x /usr/sbin/vserver-stat ]; then
+    CODE=1
+    echo "${DATIM};$MYGROUP;$VSRV;CheckVserverUp;UNDEF;0;VSERVER-UTILS not installed - cannot check $VSRV" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    RTN=`/usr/sbin/vserver-stat`
+    VRTN=`/usr/sbin/vserver-stat  | fgrep $VSRV | sed -e "s/  */ /g"`
+    if [ -z "$RTN" ]; then
+        CODE=2
+	MESSAGE="something's wrong with VServer status"
+	STATUS="WARN"     	
+    elif [ -n "$VRTN"  ]; then
+        CODE=0
+	MESSAGE="VServer $VSRV up: $VRTN"
+	STATUS="OK"     	
+    else
+        CODE=3
+	MESSAGE="VServer $VSRV down"
+	STATUS="ALERT"     	
+    fi
+    echo "${DATIM};$MYGROUP;$VSRV;CheckVserverUp;$STATUS;$CODE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+#---------------------------------------------------------
+# CheckVserverDown SERVERNAME - returns 
+#---------------------------------------------------------
+function CheckVserverDown () {
+  VSRV="$1"    
+  MossheLog "CheckVserverDown $VSRV"
+  if ! [ -x /usr/sbin/vserver-stat ]; then
+    CODE=1
+    echo "${DATIM};$MYGROUP;$VSRV;CheckVserverDown;UNDEF;0;VSERVER-UTILS not installed - cannot check $VSRV" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    RTN=`/usr/sbin/vserver-stat`
+    VRTN=`/usr/sbin/vserver-stat | fgrep $VSRV | sed -e "s/  */ /g"`
+    if [ -z "$RTN" ]; then
+        CODE=2
+	MESSAGE="something's wrong with VServer status"
+	STATUS="WARN"     	
+    elif [ -n "$VRTN" ]; then
+        CODE=3
+	MESSAGE="VServer $VSRV unexpectedly up: $VRTN"
+	STATUS="ALERT"     	
+    else
+        CODE=0
+	MESSAGE="VServer $VSRV still down as expected"
+	STATUS="OK"     	
+    fi
+    echo "${DATIM};$MYGROUP;$VSRV;CheckVserverDown;$STATUS;$CODE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+#---------------------------------------------------------
+# VserverLoad SERVERNR SERVERNAME WARN ALERT 
+#---------------------------------------------------------
+function VserverLoad () {
+  VSRV="$1"    
+  VSNAM="$2"    
+  typeset -i WARN="$3"
+  typeset -i ALERT="$4"
+  typeset -i LOAD
+  MossheLog "VserverLoad $VSNAM"
+  if ! [ -e /proc/virtual/${VSRV}/cvirt ]; then
+    echo "${DATIM};$MYGROUP;$VSNAM;VserverLoad (general);UNDEF;0;VSERVER $VSRV not running - cannot check its load" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    MESSAGE=`fgrep loadavg /proc/virtual/${VSRV}/cvirt | cut -c 10-13`
+    LOAD=`echo $MESSAGE | sed -e "s/\.//" | sed -e "s/^0*//g"`
+    STATUS="OK"
+    STAT="Normal Load";
+    if [ $LOAD -ge $WARN ]; then STATUS="WARN"; STAT="High Load"; fi
+    if [ $LOAD -ge $ALERT ]; then STATUS="ALERT"; STAT="Critical Load"; fi
+    echo "${DATIM};$MYGROUP;$VSNAM;VserverLoad;$STATUS;$LOAD;$STAT: $MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+################################################################
+###  Virtuzzo / OpenVZ beancounter checks
+################################################################
+
+# root@strato:~# cat /proc/user_beancounters 
+#Version: 2.5
+#       uid  resource                     held              maxheld              barrier                limit              failcnt
+#  2173448:  kmemsize                 54355729             79167488  9223372036854775807  9223372036854775807                    0
+#            lockedpages                     0                    0               524288               524288                    0
+#            privvmpages                112366               135711  9223372036854775807  9223372036854775807                    0
+#            shmpages                     1280                 1296  9223372036854775807  9223372036854775807                    0
+#            dummy                           0                    0  9223372036854775807  9223372036854775807                    0
+#            numproc                        65                  105  9223372036854775807  9223372036854775807                    0
+#            physpages                   80202               524290               524288               524288                    0
+#            vmguarpages                     0                    0               524288               524288                    0
+#            oomguarpages                18641                19270               524288               524288                    0
+#            numtcpsock                     10                   33  9223372036854775807  9223372036854775807                    0
+#            numflock                        4                   10  9223372036854775807  9223372036854775807                    0
+#            numpty                          2                    3  9223372036854775807  9223372036854775807                    0
+#            numsiginfo                      0                   30  9223372036854775807  9223372036854775807                    0
+#            tcpsndbuf                  357784              1128512  9223372036854775807  9223372036854775807                    0
+#            tcprcvbuf                  163840              2712192  9223372036854775807  9223372036854775807                    0
+#            othersockbuf                26672               180352  9223372036854775807  9223372036854775807                    0
+#            dgramrcvbuf                     0                 2576  9223372036854775807  9223372036854775807                    0
+#            numothersock                   73                   85  9223372036854775807  9223372036854775807                    0
+#            dcachesize               48546016             73094218  9223372036854775807  9223372036854775807                    0
+#            numfile                      1848                 2075  9223372036854775807  9223372036854775807                    0
+#            dummy                           0                    0  9223372036854775807  9223372036854775807                    0
+#            dummy                           0                    0  9223372036854775807  9223372036854775807                    0
+#            dummy                           0                    0  9223372036854775807  9223372036854775807                    0
+#            numiptent                      24                   24  9223372036854775807  9223372036854775807                    0
+#
+#                                                                                                   11111111111
+#         11111111112222222222333333333344444444445555555555666666666677777777778888888888999999999900000000001
+#12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
+
+
+#---------------------------------------------------------
+# VZbeancounter RESOURCE %WARN %ALERT
+#---------------------------------------------------------
+function VZbeancounter () {
+#	lockedpages, physpages, vmguarpages, oomguarpages
+  VRESRC="$1"    
+  typeset -i WARN="$2"
+  typeset -i ALERT="$3"
+  typeset -i HELD LIMIT PERC
+  MossheLog "VZbeancounter $VRESRC"
+  if ! [ -e /proc/user_beancounters ]; then
+    echo "${DATIM};$MYGROUP;$MYNAME;VZ_$VRESRC;UNDEF;0;not an OpenVZ/Virtuzzo guest" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+    HELD=`fgrep $VRESRC /proc/user_beancounters | cut -c 30-45 | sed -e "s/ //g"`
+    LIMIT=`fgrep $VRESRC /proc/user_beancounters | cut -c 90-109 | sed -e "s/ //g"`
+    PERC=$(( HELD / ( LIMIT / 100 ) ))
+    STATUS="OK"; STAT="Normal Usage"
+    if [ $PERC -ge $WARN ]; then STATUS="WARN"; STAT="High Usage"; fi
+    if [ $PERC -ge $ALERT ]; then STATUS="ALERT"; STAT="Overload"; fi
+    echo "${DATIM};$MYGROUP;$MYNAME;VZ_$VRESRC;$STATUS;$PERC;$STAT: $PERC % of MAX used" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
+
+
+#############################################################################
+#############################################################################

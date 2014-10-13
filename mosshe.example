@@ -1,0 +1,312 @@
+#!/bin/bash
+
+# set -x 
+
+#=========================================================
+#=========================================================
+# our configuration
+#=========================================================
+#=========================================================
+
+# MYNAME=allka.wyae.de
+MYNAME=$(/bin/hostname)
+MYDOM=$(/bin/hostname -d)
+MYGROUP="Server"	# Leave unset to lookup via DNS TXT
+
+WEBURL="https://www.wyae.de/mosshe/notok.html"
+WWWDIR=/var/www/mosshe
+DATADIR=/usr/local/lib/mosshe
+TEMPDIR=/tmp
+
+NETWAIT=5	# seconds timeout for network service check
+
+
+#=========================================================
+# Startup
+#=========================================================
+. $DATADIR/functions.mosshe
+
+MossheSelfCheck root@wyae.de	# send alert to - if MoSShE has a problem
+
+
+#=========================================================
+# local info-shows
+#=========================================================
+. $DATADIR/functions.localchecks
+
+ServerInfo who -a
+ServerInfo ps -ax
+ServerInfo pstree
+ServerInfo ifconfig -a
+ServerInfo netstat -nr
+ServerInfo netstat -anp
+ServerInfo netstat -tulpen
+
+
+#=========================================================
+# local checks
+#=========================================================
+
+HDCheck /dev/hda1 20000 10000	# system disk: 20GB /  10GB  - warn / alert (MByte)
+
+LoadCheck 1 3		# load: warn / alert
+LoadCheckPercent 100 300	# load: warn / alert
+MemCheck 30 100		# free mem: warn, min (MByte)
+#SwapCheck 30 100	# page swaps / second : warn / alert
+
+ProcessCheck 120 200	# processes: warn / alert
+ZombieCheck 3 10	# zombies: warn / alert
+ShellCheck 0 3		# shells: max.root, max.user
+
+NetworkErrorsCheck eth0  1 5		# percentage of errors on interface
+NetworkTrafficCheck eth0  50000 80000	# kbit/s average
+NetworkBandwidth eth0  500 900		# be careful not to exceed 1TB bandwidth
+NetworkConnections 450 7000		# number of concurrent connections
+
+
+# check "sensors" output for matching strings on your hardware 
+# (second parameter MUST NOT contain space characters)
+HardwareSensorBetween "fan1" "CPU Fan description" 100 3000
+HardwareSensor "temp1" "probably harddrive temperature" 45 60
+
+
+# check ClamAV-Daemon which likes to crash
+FileCheck /var/run/clamav/clamd.ctl
+ProcCheck /usr/sbin/clamd
+
+# fieles growing too old or large
+FileTooOld /var/log/syslog 90		# file older than 90 minutes
+# FileTooOld /var/log/backup.log 1500	# file older than 90 minutes
+#
+FileTooBig /var/log/auth 500 	# file bigger than 9.000 KBytes (= 9 MB)
+FileTooBig /var/log/syslog 9000 # file bigger than 9.000 KBytes (= 9 MB)
+
+
+MailqCheck 20 60
+
+
+# LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/apache/*access.log' 100 200		# make sure we don't get HTTP bruteforced
+# LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/lighttpd/*access.log' 700 1000		# make sure we don't get HTTP bruteforced
+LogEntryCheck ImapBruteforce	'authdaemond: pam_unix(imap:auth): authentication failure' /var/log/auth.log 10 50     	# we don't like IMAP/Webmail bruteforcing either
+LogEntryCheck Pop3Bruteforce	'authdaemond: pam_unix(pop3:auth): authentication failure' /var/log/auth.log 10 50     	# we don't like IMAP/Webmail bruteforcing either
+LogEntryCheck VsFtpdBruteforce	'pam_unix(vsftpd:auth): authentication failure' /var/log/auth.log 50 100		# we don't like FTP bruteforcing either
+
+LogEntryCheck TooManySU		'Successful su for ' /var/log/auth.log 50 100		# too many SU changes
+LogEntryCheck SuFailed		'FAILED su for' /var/log/auth.log 5 10			# SU should not fail too often
+
+LogEntryCheck SSHlogin		'Accepted publickey for ' /var/log/auth.log 100 200	# suspiciously many SSH logins
+LogEntryCheck SSHbruteforce	' Illegal user ' /var/log/auth.log 3 5			# we don't like SSH bruteforcing
+
+LogEntryCheck OtherBruteforce	'authentication failure' /var/log/auth.log 50 100	# we don't like other (PAM-based) bruteforcing either
+LogEntryCheck SASLusage		'sasl_username' /var/log/mail.log 400 600		# we don't like SMTP-Auth bruteforcing either
+
+
+
+# basic IDS functionality: check for changes
+
+# CheckFileChanges  KnownFile  OriginalFile
+CheckFileChanges resolv.conf /etc/resolv.conf
+CheckFileChanges passwd /etc/passwd
+CheckFileChanges shadow /etc/shadow
+CheckFileChanges authorized_keys /root/.ssh/authorized_keys
+
+# CheckConfigChanges  KnownOutputFile  "command +parameters"
+# CheckConfigChanges routing.txt "netstat -nr"
+# CheckConfigChanges listeners.txt "netstat -tulpen"
+
+
+#=========================================================
+# network checks
+#=========================================================
+. $DATADIR/functions.netchecks
+
+MYGROUP="Services"
+
+PingTime router.wyae.de 3 50 150	# IP, NumberOfPings, max roundtrip ms WARN, ALERT
+PingLoss router.wyae.de 3 70 99		# IP, NumberOfPings, max% Loss WARN, ALERT
+PingLoss laka.wyae.de 3 70 99		# IP, NumberOfPings, max% Loss WARN, ALERT
+# PingPartner europe.wyae.de 2 60 250	# IP, NumberOfPings, max% Loss, max roundtrip ms
+TCPing www.wyae.de 80	# Server,  Port
+
+HTTPheader http://www.wyae.de/mosshecheck.txt		# just the URL - checks return code, works for HTTP and HTTPS
+
+# HTTPheadermatch 302 http://www.bloodties.de/	# expected RTN code,  URL
+
+
+# URL, expected response   -   HTTP only
+# HTTPcontentmatch http://www.bloodties.de/bloodties/news/index.cfm "Copyright &copy; 2008 by www.BloodTies.de"
+
+# FTPcheck allka.wyae.de		# server name
+
+IMAPcheck allka-local		# server name
+
+SMTPcheck allka.wyae.de		# server name
+
+#SAMBAcheck filesv03			# server name
+
+
+HTTPheader http://www.mutabe.de/		# just the URL - checks return code, works for HTTP and HTTPS
+#POP3check europe.wyae.de	# server name
+#SMTPcheck europe.wyae.de	# server name
+
+
+
+#################################################################
+MYGROUP="RBL"
+
+# Mailserver, RBL-Domain
+RBLcheckIP 88.198.144.125 whois.rfc-ignorant.org
+
+RBLcheckFQDN allka.wyae.de cbl.abuseat.org
+RBLcheckFQDN allka.wyae.de virbl.dnsbl.bit.nl
+RBLcheckFQDN allka.wyae.de dnsbl.inps.de
+RBLcheckFQDN allka.wyae.de ix.dnsbl.manitu.net
+RBLcheckFQDN allka.wyae.de no-more-funn.moensted.dk
+RBLcheckFQDN allka.wyae.de combined.njabl.org
+RBLcheckFQDN allka.wyae.de dnsbl.njabl.org
+RBLcheckFQDN allka.wyae.de dnsbl.sorbs.net
+RBLcheckFQDN allka.wyae.de bl.spamcannibal.org
+RBLcheckFQDN allka.wyae.de bl.spamcop.net
+RBLcheckFQDN allka.wyae.de sbl.spamhaus.org
+RBLcheckFQDN allka.wyae.de xbl.spamhaus.org
+RBLcheckFQDN allka.wyae.de pbl.spamhaus.org
+RBLcheckFQDN allka.wyae.de dnsbl-1.uceprotect.net
+RBLcheckFQDN allka.wyae.de dsn.rfc-ignorant.org
+RBLcheckFQDN allka.wyae.de postmaster.rfc-ignorant.org
+RBLcheckFQDN allka.wyae.de bogusmx.rfc-ignorant.org
+
+
+#################################################################
+MYGROUP="DNS"
+
+
+# DNS-Server, FQDN-to-resolve, Query-type
+DNSquery allka.wyae.de allka.wyae.de a
+
+
+# DNS-Server, FQDN-to-resolve, Query-type, result/match
+DNSmatch allka-local www.wyae.de a 88.198.144.125
+DNSmatch 8.8.8.8 www.wyae.de a 88.198.144.125
+
+
+#=========================================================
+# MySQL checks
+#=========================================================
+. $DATADIR/functions.mysql
+
+MySQLThreads 30 90
+MySQLQueries 10 50
+
+
+
+
+
+#=========================================================
+# Import agent data from other servers
+#=========================================================
+
+#------  pull 
+
+# ImportAgent http://www.test.test/mosshe/index.csv
+# ImportAgentCurl http://username:password@example.com/mosshe/index.csv
+# ImportAgentWget http://username:password@example.com/mosshe/index.csv
+
+# ImportServerInfo http://www.test.test/mosshe/srv_www.test.test.txt
+
+
+#------  passive checks 
+
+# sending
+# cp $WWDIR/index.csv /mnt/nfsmount/mosshe/zeus.example.com.csv		# via file system mount
+# scp $WWDIR/index.csv mosshe@central.example.com:zeus.example.com.csv	# via password-free ssh key
+# ftp-upload --host central.example.com --user mossheusr --password mosshepw --passive --no-ls --dir /incoming --as zeus.example.com.csv $WWDIR/index.csv 	# via ftp-upload
+
+
+# reading
+# MYGROUP="Externals"
+# ReapPassiveChecks  zeus.example.com  10  /home/ftp/zeus.example.com.csv 	# servername,  max.age (minutes),  file location
+# ReapPassiveChecks  hera.example.com  10  /home/ssh/hera.example.com.csv 	# servername,  max.age (minutes),  file location
+
+
+#------ Linux VServer checks
+
+# CheckVserverDown VORLAGE
+
+# CheckVserverUp NameOfVSERVER
+# ReapPassiveChecks  NameOfVSERVER  10  /var/vserver/NameOfVSERVER/var/www/mosshe/index.csv       # servername,  max.age (minutes),  file location
+
+
+
+#=========================================================
+# Finalize and send alert if necessary
+#=========================================================
+FinalizeLog 	# always needed (provide any parameter to rm -f $WWWDIR/*.html)
+
+SortGroups	# optional group-list & per-group-listing
+
+SortServers	# yes, we want e per-server listing (optional)
+
+# RRD processing of logs - without graphs, just plain data
+#ProcessRRD
+
+
+#---------------------------------------------
+# send alerts
+
+# AlertMailOnChange root@wyae.de		# send alert to - if status changes
+
+# AlertMailAlways root@example.test		# send alert to - repeated, if status not OK
+
+# send alert if status changes for the system given (here: www.example.com)
+# AlertMailOnChangeFor www.example.com admin@example.com "Ticket 123456: server outages"
+
+SyslogOnChange local0				# syslog changes to syslog with FACILITY (default: local0)
+
+
+
+#---------------------------------------------
+# do logging
+
+# LogTo /var/log/mosshe/mosshe.log	# continuously log to filename
+# LogToDaily /var/log/mosshe/mosshe_log	# continuously log to filename, date is appended automatically
+# LogToMonthly /var/log/mosshe/mosshe_log	# continuously log to filename, month is appended automatically
+
+LogToWeekly /var/log/mosshe/mosshe_log	# continuously log to filename, week is appended automatically
+
+
+# evaluate single services for availability
+#SLA_Eval crystal.wyae.de HTTPheadermatch_200
+
+# graph data
+#       800 pixel = 800 x 5min = 66.6h = 2d 18.6h
+#       1 week = 168h    @ 5 min = 2016 datapoints
+PlotDataFiles  2016
+
+# mosshe_averagegraph
+# average 12 @ 5min = 1h
+#       every hour  @800pixel    = 33.25d = 1 month
+#       every hour  over 1 week = 12 weeks = 3 months - here doubled = 6 months
+PlotAvgDataFiles 12 4032
+
+
+
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2003- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+

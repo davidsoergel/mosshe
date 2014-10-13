@@ -1,0 +1,10 @@
+#!/bin/bash
+
+
+# DebianUpdatesAvailable
+apt-get update 2>&1 > /dev/null  
+apt-get -u upgrade --assume-no > /tmp/mosshe.DebianUpdatesAvailable.$$
+fgrep Abbruch /tmp/mosshe.DebianUpdatesAvailable.$$ > /tmp/mosshe.DebianUpdatesAvailable
+fgrep Abort /tmp/mosshe.DebianUpdatesAvailable.$$ >> /tmp/mosshe.DebianUpdatesAvailable
+rm /tmp/mosshe.DebianUpdatesAvailable.$$ 
+

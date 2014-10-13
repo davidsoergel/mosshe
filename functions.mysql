@@ -1,0 +1,108 @@
+#!/bin/sh
+
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# 	function library - please call with external script
+#
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+#############################################################################
+# MoSSHe: remote server monitoring environment
+#
+# Copyright (C) 2013- Volker Tanger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# For bug reports and suggestions or if you just want to talk to me please
+# contact me at volker.tanger@wyae.de
+#
+# Updates will be available at  http://www.wyae.de/software/mosshe/
+# please check there for updates prior to submitting patches!
+#
+# For list of changes please refer to the HISTORY file. Thanks.
+#############################################################################
+
+
+
+#############################################################################
+# MySQL checks - functions below
+#############################################################################
+
+# before monitoring grant query permissions to status user
+# mysql> grant usage on *.* to 'status'@'localhost' identified by 'status'; 
+
+
+#---------------------------------------------------------
+# MySQLThreads WARN ALERT
+#---------------------------------------------------------
+function MySQLThreads () {
+    MossheLog "MySQLThreads $1 $2"
+    typeset -i ALERT WARN VALUE  RTN
+    WARN=$1
+    ALERT=$2
+    TEMPFILE=`mktemp`
+
+    if [ -x /usr/bin/mysqladmin ]; then
+	RTN=`mysqladmin --user=status --password=status status > $TEMPFILE  2>/dev/null; echo $?`
+	if [ $RTN -gt 0 ]; then
+            echo "${DATIM};$MYGROUP;$MYNAME;MySQLThreads;UNDEF;-10;mysql-user status without permission" >> $TEMPDIR/tmp.$$.collected.tmp				
+	else
+	    VALUE=`cut -d " " -f 5 < $TEMPFILE`
+	    if [ "$VALUE" -gt "$ALERT" ]; then 
+		STATUS="ALERT"
+		MESSAGE="Excessive Thread count for Mysql on $MYGROUP: $MYNAME "
+	    elif [ "$VALUE" -gt "$WARN" ]; then 
+	    	STATUS="WARN"
+		MESSAGE="High Thread count for Mysql on $MYGROUP: $MYNAME "
+	    else
+	    	STATUS="OK"
+		MESSAGE="Thread count ok for Mysql on $MYGROUP: $MYNAME "
+	    fi
+	    echo "${DATIM};$MYGROUP;$MYNAME;MySQLThreads;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+    else
+        echo "${DATIM};$MYGROUP;$MYNAME;MySQLThreads;UNDEF;-5;mysql not installed?" >> $TEMPDIR/tmp.$$.collected.tmp				
+    fi
+    rm $TEMPFILE
+}
+
+
+#---------------------------------------------------------
+# MySQLQueries WARN ALERT    Queries per second (int)
+#---------------------------------------------------------
+function MySQLQueries () {
+    MossheLog "MySQLQueries $1 $2"
+    typeset -i ALERT WARN VALUE RTN
+    WARN=$1
+    ALERT=$2
+    TEMPFILE=`mktemp`
+
+    if [ -x /usr/bin/mysqladmin ]; then
+	RTN=`mysqladmin --user=status --password=status status > $TEMPFILE  2>/dev/null; echo $?`
+	if [ $RTN -gt 0 ]; then
+            echo "${DATIM};$MYGROUP;$MYNAME;MySQLQueries;UNDEF;-10;mysql-user status without permission" >> $TEMPDIR/tmp.$$.collected.tmp				
+	else
+	    VALUE=`cut -d " " -f 29 < $TEMPFILE | cut -d "." -f 1`
+	    if [ "$VALUE" -gt "$ALERT" ]; then 
+		STATUS="ALERT"
+		MESSAGE="Excessive Query/sec load for Mysql on $MYGROUP: $MYNAME "
+	    elif [ "$VALUE" -gt "$WARN" ]; then 
+	    	STATUS="WARN"
+		MESSAGE="High Query/sec count for Mysql on $MYGROUP: $MYNAME "
+	    else
+	    	STATUS="OK"
+		MESSAGE="Queries/sec ok for Mysql on $MYGROUP: $MYNAME "
+	    fi
+	    echo "${DATIM};$MYGROUP;$MYNAME;MySQLQueries;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+	fi
+    else
+        echo "${DATIM};$MYGROUP;$MYNAME;MySQLQueries;UNDEF;-5;mysql not installed?" >> $TEMPDIR/tmp.$$.collected.tmp				
+    fi
+    rm $TEMPFILE
+}
+
+
+#############################################################################
