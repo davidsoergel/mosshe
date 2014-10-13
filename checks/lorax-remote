@@ -1,0 +1,22 @@
+#!/bin/sh
+
+MYGROUP="PING"
+
+# Can't ping into EC2, but the other checks should catch a problem
+#PingTime www.lorax.org 3 300 1000	# IP, NumberOfPings, max roundtrip ms WARN, ALERT
+#PingLoss www.lorax.org 3 50 99	# IP, NumberOfPings, max% Loss WARN, ALERT
+
+MYGROUP="SSH"
+
+SSHcheck www.lorax.org
+
+MYGROUP="HTTP"
+
+HTTPheader http://www.lorax.org
+HTTPcontentmatch http://www.lorax.org "folks"
+HTTPcontentmatch http://www.dsoergel.com "Freiburg"
+HTTPcontentmatch http://www.davidsoergel.com/ "Diacaustic"
+
+MYGROUP="MoSSHe"
+
+HTTPcontentmatch http://www.lorax.org/mosshe/index.html "MoSSHe System Status"

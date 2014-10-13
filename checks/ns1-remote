@@ -1,0 +1,26 @@
+#!/bin/sh
+
+MYGROUP="PING"
+
+PingTime ns1.lorax.org 3 300 1000	# IP, NumberOfPings, max roundtrip ms WARN, ALERT
+PingLoss ns1.lorax.org 3 50 99	# IP, NumberOfPings, max% Loss WARN, ALERT
+
+MYGROUP="DNS"
+
+# DNS-Server, FQDN-to-resolve, Query-type
+DNSquery ns1.lorax.org ns1.lorax.org a
+DNSquery ns1.lorax.org ns2.lorax.org a
+DNSquery ns1.lorax.org lorax.org a
+DNSquery ns1.lorax.org dev.davidsoergel.com a
+
+MYGROUP="SSH"
+
+SSHcheck ns1.lorax.org
+
+MYGROUP="HTTP"
+
+HTTPheader http://ns1.lorax.org
+
+MYGROUP="MoSSHe"
+
+HTTPcontentmatch http://ns1.lorax.org/mosshe/index.html "MoSSHe System Status"

@@ -1,0 +1,58 @@
+#!/bin/sh
+
+#=========================================================
+# local checks
+#=========================================================
+. $DATADIR/functions.localchecks
+
+
+#HDCheck /dev/simfs 7000 5000	# system disk: 20GB /  10GB  - warn / alert (MByte)
+HDCheck /dev/sda1 5000 3000
+HDCheck /dev/sde 2000 1000
+HDCheck /dev/sdf 2000 1000
+HDCheck /dev/sdg 2000 1000
+
+LoadCheck 1 3		# load: warn / alert
+MemCheck 30 100	# free mem: warn, min (MByte)
+
+ProcessCheck 130 150	# processes: warn / alert
+ZombieCheck 3 10	# zombies: warn / alert
+ShellCheck 0 5		# shells: max.root, max.user
+
+FilehandlesCheck 3000 10000
+
+NetworkErrorsCheck eth0  1 5		# percentage of errors on interface
+NetworkTrafficCheck eth0  500 1000	# kbit/s average
+
+# fieles growing too large
+#FileTooOld /var/log/messages 90		# file older than 90 minutes
+# FileTooOld /var/log/backup.log 1500	# file older than 90 minutes
+#
+#FileTooBig /var/log/auth 500 	# file bigger than 9.000 KBytes (= 9 MB)
+FileTooBig /var/log/messages 9000 # file bigger than 9.000 KBytes (= 9 MB)
+
+
+
+LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/httpd/*access_log' 100 200		# make sure we don't get HTTP bruteforced
+# LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/lighttpd/*access.log' 700 1000		# make sure we don't get HTTP bruteforced
+
+#LogEntryCheck TooManySU		'Successful su for ' /var/log/auth.log 50 100		# too many SU changes
+#LogEntryCheck SuFailed		'FAILED su for' /var/log/auth.log 5 10			# SU should not fail too often
+
+#LogEntryCheck SSHlogin		'Accepted publickey for ' /var/log/auth.log 10 20	# suspiciously many SSH logins
+#LogEntryCheck SSHbruteforce	' Illegal user ' /var/log/auth.log 3 5			# we don't like SSH bruteforcing
+
+#LogEntryCheck OtherBruteforce	'authentication failure' /var/log/auth.log 5 10	# we don't like other (PAM-based) bruteforcing either
+
+
+# basic IDS functionality: check for changes
+
+# CheckFileChanges  KnownFile  OriginalFile
+CheckFileChanges resolv.conf /etc/resolv.conf
+CheckFileChanges passwd /etc/passwd
+CheckFileChanges shadow /etc/shadow
+#CheckFileChanges authorized_keys /root/.ssh/authorized_keys
+
+# CheckConfigChanges  KnownOutputFile  "command +parameters"
+# CheckConfigChanges routing.txt "netstat -nr"
+# CheckConfigChanges listeners.txt "netstat -tulpen"

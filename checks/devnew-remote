@@ -1,0 +1,21 @@
+#!/bin/sh
+
+MYGROUP="PING"
+
+PingTime devnew.davidsoergel.com 3 300 1000	# IP, NumberOfPings, max roundtrip ms WARN, ALERT
+PingLoss devnew.davidsoergel.com 3 50 99	# IP, NumberOfPings, max% Loss WARN, ALERT
+
+MYGROUP="SSH"
+
+SSHcheck devnew.davidsoergel.com 
+
+MYGROUP="HTTP"
+
+HTTPheader http://devnew.davidsoergel.com
+HTTPcontentmatch http://devnew.davidsoergel.com/ "project-specific"
+HTTPcontentmatch http://devnew.davidsoergel.com/hudson/ "Hudson"
+HTTPcontentmatch http://devnew.davidsoergel.com/artifactory/repo/ "Artifactory"
+
+MYGROUP="MoSSHe"
+
+HTTPcontentmatch http://devnew.davidsoergel.com/mosshe/index.html "MoSSHe System Status"

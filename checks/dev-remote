@@ -1,0 +1,29 @@
+#!/bin/sh
+
+MYGROUP="PING"
+
+# Can't ping into EC2, but the other checks should catch a problem
+#PingTime dev.davidsoergel.com 3 300 1000	# IP, NumberOfPings, max roundtrip ms WARN, ALERT
+#PingLoss dev.davidsoergel.com 3 50 99	# IP, NumberOfPings, max% Loss WARN, ALERT
+
+MYGROUP="SSH"
+
+SSHcheck dev.davidsoergel.com 
+
+MYGROUP="HTTP"
+
+HTTPheader http://dev.davidsoergel.com
+
+HTTPcontentmatch http://dev.davidsoergel.com/ "project-specific"
+HTTPcontentmatch http://dev.davidsoergel.com/2011/03/11/visualizing-a-todo-list-with-treemaps/ "visualize"
+HTTPcontentmatch http://dev.davidsoergel.com/trac/s3napback/ "Incremental"
+HTTPcontentmatch http://dev.davidsoergel.com/jenkins/ "Jenkins"
+HTTPcontentmatch http://dev.davidsoergel.com/nexus/content/groups/public/ "repository.xml"
+
+# quick & dirty
+HTTPcontentmatch http://openreview.net/iclr2013 "Scottsdale"
+
+MYGROUP="MoSSHe"
+
+# HTTPcontentmatch http://dev.davidsoergel.com/mosshe/index.html "MoSSHe System Status"
+

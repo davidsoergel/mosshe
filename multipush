@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# ns1 -> QuickWeb
+hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@199.195.141.75//usr/local/lib/mosshe
+
+# ns2 -> BuyVM
+hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@205.185.123.6//usr/local/lib/mosshe
+
+#lorax -> EC2
+hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@50.16.189.67//usr/local/lib/mosshe
+
+#dev -> EC2
+hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@107.20.181.100//usr/local/lib/mosshe
+
