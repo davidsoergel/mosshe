@@ -1,5 +1,18 @@
+MoSSHe with modifications by David Soergel <david@davidsoergel.com>, 2009-2014.
+
+*Master branch is stock MoSSHe; modifications are on the davidsoergel branch*
+
+Changes from original MoSSHe:
+* Use 'nc' instead of 'netcat'
+* Use 'lynx' instead of 'wget'
+* Don't notify until a failure persists for N cycles
+* Add check for open filehandles
+* Various minor tweaks
+
+
+
 -----------------------------------------------------------------------
-      			MoSShE  v14.9.19
+      			MoSShE  v14.9.24
  	   2003-2014 by Volker Tanger <volker.tanger@wyae.de>
 -----------------------------------------------------------------------
 
