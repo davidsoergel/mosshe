@@ -18,7 +18,7 @@ WWWDIR=/var/www/html/mosshe
 DATADIR=/usr/local/lib/mosshe
 TEMPDIR=/tmp
 
-NETWAIT=5	# seconds timeout for network service check
+NETWAIT=10	# seconds timeout for network service check
 
 
 #=========================================================
@@ -59,7 +59,7 @@ MossheSelfCheck page-lorax@lorax.org	# send alert to - if MoSShE has a problem
 . $DATADIR/checks/ns1-remote
 . $DATADIR/checks/ns2-remote
 # . $DATADIR/checks/lorax-remote
-. $DATADIR/checks/dev-remote
+#. $DATADIR/checks/dev-remote
 #. $DATADIR/checks/devnew-remote
 
 
@@ -115,10 +115,16 @@ LogToWeekly /var/log/mosshe/mosshe_log	# continuously log to filename, week is a
 # evaluate single services for availability
 SLA_Eval www.lorax.org HTTPheadermatch_200
 
-# create data for graphing
-#CreateDataFiles  480   # create data only
-PlotDataFiles  480	# create data & plot it using gnuplot
+# graph data
+#       800 pixel = 800 x 5min = 66.6h = 2d 18.6h
+#       1 week = 168h    @ 5 min = 2016 datapoints
+PlotDataFiles  2016
 
+# mosshe_averagegraph
+# average 12 @ 5min = 1h
+#       every hour  @800pixel    = 33.25d = 1 month
+#       every hour  over 1 week = 12 weeks = 3 months - here doubled = 6 months
+PlotAvgDataFiles 12 4032
 
 #############################################################################
 # MoSSHe: remote server monitoring environment
