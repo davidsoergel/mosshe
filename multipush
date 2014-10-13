@@ -1,4 +1,7 @@
 #!/bin/sh
+
+# Push directly to all remotes by IP, requiring no DNS or github or anything else.
+
 GIT_SSH=./ssh-mosshe
 
 # ns1 -> QuickWeb
@@ -8,4 +11,5 @@ hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@199.195.14
 hg push -e 'ssh -i /Users/lorax/.ssh/id_rsa.tinydns' -f ssh://tinydns@205.185.123.6//usr/local/lib/mosshe
 
 #lorax -> EC2
-git push ssh://mosshe@54.164.125.117//usr/local/mosshe davidsoergel
+git push ssh://mosshe@54.164.125.117//home/mosshe/mosshe.git davidsoergel
+./ssh-mosshe mosshe@54.164.125.117 'cd /usr/local/mosshe; git pull; git checkout'
