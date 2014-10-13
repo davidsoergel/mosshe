@@ -63,7 +63,7 @@ v14.9.19
     
 v14.6.24
     Volker Tanger <volker.tanger@wyae.de>
-	* bugfix: ImportAgents now alert when slave unavailabe
+	* bugfix: ImportAgents now alert when slave unavailable
 	* bugfix: undefined states are now correctly counted
 	* expire: LoadHekto (renamed to LoadCheckPercent)
 	* feature/bugfix: import agents now respect NETWAIT value

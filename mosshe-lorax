@@ -9,8 +9,8 @@
 #=========================================================
 
 # MYNAME=allka.wyae.de
-MYNAME=$(/bin/hostname)
-MYDOM=$(/bin/hostname -d)
+MYNAME=www.lorax.org
+MYDOM=lorax.org
 MYGROUP="Server"	# Leave unset to lookup via DNS TXT
 
 WEBURL="http://$MYNAME/mosshe/"

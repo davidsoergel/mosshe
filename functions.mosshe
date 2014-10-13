@@ -74,8 +74,8 @@ function MossheLog () {
 function MossheSelfCheck () {
     MossheLog "MossheSelfCheck"
     if [ -z `which mail` ]; then
-    	echo "MoSShE: 'mail' command not availabe, cannot send alerts!"
-	logger -t MoSShE -p local0.alert "MoSShE: 'mail' command not availabe, cannot send alerts!"
+    	echo "MoSShE: 'mail' command not available, cannot send alerts!"
+	logger -t MoSShE -p local0.alert "MoSShE: 'mail' command not available, cannot send alerts!"
     	exit 255
     fi
 
