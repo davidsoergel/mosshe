@@ -1,5 +1,7 @@
 MoSSHe with modifications by David Soergel <david@davidsoergel.com>, 2009-2014.
 
+*Master branch is stock MoSSHe; modifications are on the davidsoergel branch*
+
 Changes from original MoSSHe:
 * Use 'nc' instead of 'netcat'
 * Use 'lynx' instead of 'wget'
