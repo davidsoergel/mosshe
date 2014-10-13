@@ -155,6 +155,23 @@ function HDCheck () {
 
 
 #---------------------------------------------------------
+# Filehandles-Check - warn;alert - filehandles used
+#---------------------------------------------------------
+function FilehandlesCheck () {
+    typeset -i WARN ALERT; WARN=$1; ALERT=$2
+    typeset -i VALUE 
+    STATUS="OK"
+    
+    VALUE=`cat /proc/sys/fs/file-nr | cut -d "	" -f 1`
+    MESSAGE="Open filehandles: $VALUE"
+    if [ $VALUE -gt $WARN ]; then STATUS="WARN"; MESSAGE="Many open filehandles : $VALUE"; fi
+    if [ $VALUE -gt $ALERT ]; then STATUS="ALERT"; MESSAGE="Critically many open filehandles : $VALUE"; fi
+    
+    echo "${DATIM};$MYGROUP;$MYNAME;filehandles;$STATUS;$VALUE;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+}
+
+
+#---------------------------------------------------------
 # HDCheckGB - device;warn;alert - GB free
 #---------------------------------------------------------
 function HDCheckGB () {
@@ -451,7 +468,7 @@ function ShellCheck () {
     RUSERSS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep root | fgrep -v fgrep | wc -l`
     RUSERSB=`ps -eo pid,user,ruser,tty,args | fgrep " -su" | fgrep -v fgrep | wc -l`
     RUSERS=${RUSERSB}+${RUSERSS}
-    USERS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | wc -l`
+    USERS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep -v "fgrep  -bash" | wc -l`
 
     MESSAGE="No notable interactive shells"
     STATUS="OK"
