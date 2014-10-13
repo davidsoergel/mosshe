@@ -17,9 +17,9 @@ HDCheck /dev/xvdc 2000 1000
 #/dev/xvdd        20G  5.8G   13G  31% /mnt/dagobert
 HDCheck /dev/xvdd 2000 1000
 #/dev/xvde       9.9G  2.8G  6.6G  30% /mnt/jenkins
-HDCheck /dev/xvda1 2000 1000
+HDCheck /dev/xvdw 2000 1000
 #/dev/xvdf        25G   11G   13G  46% /mnt/nexus
-HDCheck /dev/xvda1 2000 1000
+HDCheck /dev/xvdf 2000 1000
 
 
 LoadCheck 1 3		# load: warn / alert
