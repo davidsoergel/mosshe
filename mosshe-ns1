@@ -57,6 +57,8 @@ MossheSelfCheck lorax@lorax.org	# send alert to - if MoSShE has a problem
 . $DATADIR/checks/ns1-remote
 . $DATADIR/checks/ns2-remote
 . $DATADIR/checks/lorax-remote
+. $DATADIR/checks/ds-remote
+. $DATADIR/checks/openreview-remote
 
 
 #=========================================================

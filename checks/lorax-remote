@@ -15,7 +15,6 @@ MYGROUP="HTTP"
 HTTPheader http://www.lorax.org
 HTTPcontentmatch http://www.lorax.org "folks"
 HTTPcontentmatch http://www.dsoergel.com "Freiburg"
-HTTPcontentmatch http://www.davidsoergel.com/ "RSS feed"
 
 MYGROUP="MoSSHe"
 
