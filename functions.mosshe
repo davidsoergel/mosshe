@@ -81,7 +81,7 @@ function MossheSelfCheck () {
 
     if [ -f $TEMPDIR/mosshe_lock.5 ]; then
     	#date | mail -s "$MYGROUP: $MYNAME - MoSShE in deadlock" $1
-        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$MYGROUP: $MYNAME" -event="MoSShE in deadlock" -notification="`date`" -priority=1 -url="http://www.lorax.org/mosshe"
+        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$MYGROUP: $MYNAME" -event="MoSShE in deadlock" -notification="`date`" -priority=1 -url=http://`hostname`/mosshe
 	rm -f $TEMPDIR/mosshe_lock.*
 	killall mosshe
     fi
