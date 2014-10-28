@@ -58,7 +58,7 @@ MossheSelfCheck lorax@lorax.org	# send alert to - if MoSShE has a problem
 . $DATADIR/checks/ns2-remote
 . $DATADIR/checks/lorax-remote
 . $DATADIR/checks/ds-remote
-. $DATADIR/checks/openreview-remote
+# . $DATADIR/checks/openreview-remote
 
 #=========================================================
 # Import agent data from other servers
