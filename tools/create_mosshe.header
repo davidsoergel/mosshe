@@ -15,7 +15,7 @@ MYGROUP=Server	# Leave unset to lookup via DNS TXT
 
 WEBURL="http://localhost/mosshe/groups.html"
 WWWDIR=/var/www/mosshe
-DATADIR=/usr/local/lib/mosshe
+DATADIR=/etc/mosshe
 TEMPDIR=/tmp
 
 NETWAIT=5	# seconds timeout for network service check

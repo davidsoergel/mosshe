@@ -1,1 +1,1 @@
-*/5 * * * *	root	/usr/local/lib/mosshe/mosshe
+*/5 * * * *	root	/etc/mosshe
