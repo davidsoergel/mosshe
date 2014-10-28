@@ -4,7 +4,7 @@
 # local checks
 #=========================================================
 . $DATADIR/functions.localchecks
-
+ServerInfo uptime
 
 HDCheck /dev/vda1 7000 5000	# system disk: 20GB /  10GB  - warn / alert (MByte)
 
