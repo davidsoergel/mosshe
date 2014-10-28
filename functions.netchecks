@@ -307,7 +307,8 @@ function DNSquery () {
     if [ -z `which dig` ]; then
 	echo "${DATIM};$MYGROUP;$DNSSERVER;dns (general);UNDEF;-1;DIG not installed - cannot perform DNS check"  >> $TEMPDIR/tmp.$$.collected.tmp
     else
-	RTN=`dig +short @$DNSSERVER $FQDN $QTYPE | tail -n 1`
+    DNSSERVERIP=`dig +short $DNSSERVER | tail -n 1`
+	RTN=`dig +short @$DNSSERVERIP $FQDN $QTYPE | tail -n 1`
 	RTNCODE=`echo $RTN | wc -c | sed -e "s/ //g"`
 	if [ "$RTNCODE" -gt 7 ]; then 
 	    STATUS="OK";
