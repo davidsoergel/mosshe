@@ -5,6 +5,6 @@ MYGROUP="HTTP"
 HTTPheader http://davidsoergel.com
 
 HTTPcontentmatch http://davidsoergel.com/ "RSS feed"
-HTTPcontentmatch http://davidsoergel.com/2011/03/11/visualizing-a-todo-list-with-treemaps/ "visualize"
+HTTPcontentmatch http://davidsoergel.com/2011/03/11/visualizing-a-todo-list-with-treemaps "visualize"
 HTTPcontentmatch http://davidsoergel.com/jenkins/ "Jenkins"
 HTTPcontentmatch http://davidsoergel.com/nexus/content/groups/public/ "repository.xml"
