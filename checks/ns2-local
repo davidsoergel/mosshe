@@ -15,8 +15,8 @@ ProcessCheck 50 100	# processes: warn / alert
 ZombieCheck 3 10	# zombies: warn / alert
 ShellCheck 0 0		# shells: max.root, max.user
 
-NetworkErrorsCheck venet0  1 5		# percentage of errors on interface
-NetworkTrafficCheck venet0  50 80	# kbit/s average
+NetworkErrorsCheck eth0  1 5		# percentage of errors on interface
+NetworkTrafficCheck eth0  50 80	# kbit/s average
 
 FilehandlesCheck 2000 4000
 
