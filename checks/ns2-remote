@@ -11,7 +11,7 @@ MYGROUP="DNS"
 DNSquery ns2.lorax.org ns1.lorax.org a
 DNSquery ns2.lorax.org ns2.lorax.org a
 DNSquery ns2.lorax.org lorax.org a
-DNSquery ns2.lorax.org dev.davidsoergel.com a
+DNSquery ns2.lorax.org davidsoergel.com a
 
 MYGROUP="SSH"
 

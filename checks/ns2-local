@@ -11,7 +11,7 @@ HDCheck /dev/vda1 7000 5000	# system disk: 20GB /  10GB  - warn / alert (MByte)
 LoadCheck 1 3		# load: warn / alert
 MemCheck 30 100	# free mem: warn, min (MByte)
 
-ProcessCheck 50 100	# processes: warn / alert
+ProcessCheck 130 150	# processes: warn / alert
 ZombieCheck 3 10	# zombies: warn / alert
 ShellCheck 0 0		# shells: max.root, max.user
 
