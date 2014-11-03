@@ -42,7 +42,7 @@ FileTooBig /var/log/messages 9000 # file bigger than 9.000 KBytes (= 9 MB)
 
 
 
-LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/httpd/*access_log' 100 200		# make sure we don't get HTTP bruteforced
+LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/httpd/*access_log' 700 1000		# make sure we don't get HTTP bruteforced
 # LogEntryCheck HTTPbruteforce	' 401 ' '/var/log/lighttpd/*access.log' 700 1000		# make sure we don't get HTTP bruteforced
 
 #LogEntryCheck TooManySU		'Successful su for ' /var/log/auth.log 50 100		# too many SU changes
