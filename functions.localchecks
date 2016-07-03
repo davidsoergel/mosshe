@@ -465,10 +465,11 @@ function ShellCheck () {
     typeset -i RMAX UMAX; RMAX=$1; UMAX=$2
     typeset -i RUSERS RUSERSB RUSERSS
     typeset -i USERS
-    RUSERSS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep root | fgrep -v fgrep | wc -l`
-    RUSERSB=`ps -eo pid,user,ruser,tty,args | fgrep " -su" | fgrep -v fgrep | wc -l`
-    RUSERS=${RUSERSB}+${RUSERSS}
-    USERS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep -v "fgrep  -bash" | wc -l`
+    RUSERSE=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep ec2 | fgrep -v grep | wc -l`
+    RUSERSS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep root | fgrep -v grep | wc -l`
+    RUSERSB=`ps -eo pid,user,ruser,tty,args | fgrep " -su" | fgrep -v grep | wc -l`
+    RUSERS=${RUSERSB}+${RUSERSS}+${RUSERSE}
+    USERS=`ps -eo pid,user,ruser,tty,args | fgrep " -bash" | fgrep -v "grep  -bash" | wc -l`
 
     MESSAGE="No notable interactive shells"
     STATUS="OK"
