@@ -11,7 +11,7 @@ ServerInfo uptime
 # /dev/xvda1      9.8G  2.1G  7.6G  22% /
 HDCheck /dev/xvda1 5000 3000
 #/dev/xvdb       2.9G   68M  2.7G   3% /mnt/log
-HDCheck /dev/xvdb 2000 1000
+HDCheck /dev/xvdb 800 500
 #/dev/xvdc        20G   14G  5.0G  74% /mnt/home
 HDCheck /dev/xvdc 2000 1000
 #/dev/xvdd        20G  5.8G   13G  31% /mnt/dagobert
