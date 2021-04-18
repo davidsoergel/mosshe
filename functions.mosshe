@@ -76,13 +76,14 @@ function MossheSelfCheck () {
     if [ -z `which mail` ]; then
     	echo "MoSShE: 'mail' command not available, cannot send alerts!"
 	logger -t MoSShE -p local0.alert "MoSShE: 'mail' command not available, cannot send alerts!"
-    	exit 255
+    	# exit 255
     fi
 
     if [ -f $TEMPDIR/mosshe_lock.5 ]; then
     	#date | mail -s "$MYGROUP: $MYNAME - MoSShE in deadlock" $1
-        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$MYGROUP: $MYNAME" -event="MoSShE in deadlock" -notification="`date`" -priority=1 -url=http://`hostname`/mosshe
-	rm -f $TEMPDIR/mosshe_lock.*
+        # $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$MYGROUP: $MYNAME" -event="MoSShE in deadlock" -notification="`date`" -priority=1 -url=http://`hostname`/mosshe
+	    curl https://api.prowlapp.com/publicapi/add -F apikey=`cat /etc/prowlkey` -F application="$MYGROUP: $MYNAME" -F event="MoSShE in deadlock" -F description="`date`" -F url=http://`hostname`/mosshe
+    rm -f $TEMPDIR/mosshe_lock.*
 	killall mosshe
     fi
 
@@ -635,7 +636,8 @@ if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff ]; then
             event="Multiple Alerts!"
             notification=$message
         fi
-        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+        # $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+	    curl https://api.prowlapp.com/publicapi/add -F apikey=`cat /etc/prowlkey` -F application="$application" -F event="$event" -F description="$notification" -F priority=$priority -F url=http://`hostname`/mosshe
     fi
     
     if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff.warn ]; then
@@ -649,7 +651,9 @@ if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff ]; then
             event="Multiple Warnings!"
             notification=$message
         fi
-        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+        # $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+	    curl https://api.prowlapp.com/publicapi/add -F apikey=`cat /etc/prowlkey` -F application="$application" -F event="$event" -F description="$notification" -F priority=$priority -F url=http://`hostname`/mosshe
+ 
     fi
     
     if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff.ok ]; then
@@ -663,7 +667,8 @@ if [ -s $TEMPDIR/notok.persistent.$NUMCHECKS.diff ]; then
             event="Multiple OK!"
             notification=$message
         fi
-        $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+        # $DATADIR/prowl.pl -apikeyfile=/etc/prowlkey -application="$application" -event="$event" -notification="$notification" -priority=$priority -url=http://`hostname`/mosshe
+	    curl https://api.prowlapp.com/publicapi/add -F apikey=`cat /etc/prowlkey` -F application="$application" -F event="$event" -F description="$notification" -F priority=$priority -F url=http://`hostname`/mosshe
     fi
 fi
 }
