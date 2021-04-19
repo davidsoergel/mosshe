@@ -6,7 +6,7 @@
 . $DATADIR/functions.localchecks
 ServerInfo uptime
 
-HDCheck /dev/simfs 5000 3000	# system disk: 20GB /  10GB  - warn / alert (MByte)
+HDCheck /dev/simfs 4000 2000	# system disk: 20GB /  10GB  - warn / alert (MByte)
 
 LoadCheck 1 3		# load: warn / alert
 MemCheck 30 100	# free mem: warn, min (MByte)
