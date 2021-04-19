@@ -12,9 +12,9 @@ SSHcheck www.lorax.org
 
 MYGROUP="HTTP"
 
-HTTPheader http://www.lorax.org
-HTTPcontentmatch http://www.lorax.org "folks"
-HTTPcontentmatch http://www.dsoergel.com "Freiburg"
+HTTPheader https://www.lorax.org
+HTTPcontentmatch https://www.lorax.org "folks"
+HTTPcontentmatch https://www.dsoergel.com "Freiburg"
 
 MYGROUP="MoSSHe"
 
