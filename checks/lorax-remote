@@ -18,4 +18,4 @@ HTTPcontentmatch https://www.dsoergel.com "Freiburg"
 
 MYGROUP="MoSSHe"
 
-HTTPcontentmatch http://www.lorax.org/mosshe/index.html "MoSSHe System Status"
+HTTPcontentmatch https://www.lorax.org/mosshe/index.html "MoSSHe System Status"
