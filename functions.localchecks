@@ -511,6 +511,33 @@ function MemCheck () {
   fi
 }
 
+#---------------------------------------------------------
+# Memory: min. free (buffer/cache corrected)
+#---------------------------------------------------------
+function MemCheck2 () {
+  MossheLog "MemCheck"
+  if [ -z `which free` ]; then
+     echo "${DATIM};$MYGROUP;$MYNAME;memory (general);UNDEF;0;FREE not installed - cannot perform MEMORY/RAM check" >> $TEMPDIR/tmp.$$.collected.tmp
+  else
+     typeset -i WMAX=$1; 
+     typeset -i AMAX=$2;
+     # typeset -i TOTAL=`free -m | fgrep "buffers/cache:" | sed -e "s/  */ /g" | cut -d " " -f 4`
+     typeset -i TOTAL=`free -m | sed -n '2p' | sed -e "s/  */ /g" | cut -d " " -f 4`
+     
+     MESSAGE="Memory free ($TOTAL MB)"
+     STATUS="OK"
+     if [ $TOTAL -lt $WMAX ]; then 
+         STATUS="WARN";
+         MESSAGE="Memory congested ($TOTAL MB free)"
+     fi
+     if [ $TOTAL -lt $AMAX ]; then
+         STATUS="ALERT";
+         MESSAGE="Memory tight ($TOTAL MB free)"
+     fi
+     echo "${DATIM};$MYGROUP;$MYNAME;memory;$STATUS;$TOTAL;$MESSAGE" >> $TEMPDIR/tmp.$$.collected.tmp
+  fi
+}
+
 
 #---------------------------------------------------------
 # Swap:  page in/out per second
