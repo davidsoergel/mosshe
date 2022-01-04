@@ -8,7 +8,7 @@ ServerInfo uptime
 
 #HDCheck /dev/simfs 7000 5000	# system disk: 20GB /  10GB  - warn / alert (MByte)
 
-HDCheck /dev/nvme0n1p1 4000 2000
+HDCheck /dev/nvme0n1p1 3000 2000
 # /dev/xvda1      9.8G  2.1G  7.6G  22% /
 # HDCheck /dev/xvda1 5000 3000
 #/dev/xvdb       2.9G   68M  2.7G   3% /mnt/log
